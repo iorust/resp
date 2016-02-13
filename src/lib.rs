@@ -1,5 +1,7 @@
 //! RESP and serialization
 
-pub use self::value::{Value};
+pub use self::value::{ Value };
+pub use self::serialize::{ encode, encode_slice, Decoder };
 
-pub mod value;
+mod value;
+mod serialize;
