@@ -2,6 +2,11 @@ RESP
 ====
 RESP(REdis Serialization Protocol) Serialization for Rust .
 
+[![Crates version][version-image]][version-url]
+[![Build Status][travis-image]][travis-url]
+[![Coverage Status][coveralls-image]][coveralls-url]
+[![Crates downloads][downloads-image]][downloads-url]
+
 ## API
 
 ```Rust
@@ -41,27 +46,27 @@ let nul = Value::Null;
 
 #### impl Value
 
-##### fn is_null(&self) -> bool
+##### `fn is_null(&self) -> bool`
 ```Rust
 println!("{:?}", Value::Null.is_null())  // true
 println!("{:?}", Value::NullArray.is_null())  // true
 println!("{:?}", Value::Integer(123).is_null())  // false
 ```
 
-##### fn is_error(&self) -> bool
+##### `fn is_error(&self) -> bool`
 ```Rust
 println!("{:?}", Value::Null.is_error())  // false
 println!("{:?}", Value::NullArray.is_error())  // false
 println!("{:?}", Value::Error("".to_string()).is_error())  // true
 ```
 
-##### fn encode(&self) -> Vec<u8>
+##### `fn encode(&self) -> Vec<u8>`
 ```Rust
 let val = Value::String("OK正".to_string());
 println!("{:?}", val.encode())  // [43, 79, 75, 230, 173, 163, 13, 10]
 ```
 
-##### fn to_encoded_string(&self) -> Result<String, FromUtf8Error>
+##### `fn to_encoded_string(&self) -> Result<String, FromUtf8Error>`
 ```Rust
 let val = Value::String("OK正".to_string());
 println!("{:?}", val.to_encoded_string().unwrap())  // "+OK正\r\n"
@@ -71,7 +76,7 @@ println!("{:?}", val.to_encoded_string().unwrap())  // "+OK正\r\n"
 
 Encode a RESP value to buffer.
 
-##### fn encode(value: &Value) -> Vec<u8>
+##### `fn encode(value: &Value) -> Vec<u8>`
 
 ```Rust
 let val = Value::String("OK正".to_string());
@@ -82,7 +87,7 @@ println!("{:?}", encode(&val))  // [43, 79, 75, 230, 173, 163, 13, 10]
 
 Encode a slice of string to RESP request buffer. It is usefull for redis client to encode request command.
 
-##### fn encode_slice(array: &[&str]) -> Vec<u8>
+##### `fn encode_slice(array: &[&str]) -> Vec<u8>`
 
 ```Rust
 let array = ["SET", "a", "1"];
@@ -113,28 +118,40 @@ println!("{:?}", decoder.read())  // Some(Value::NullArray)
 
 #### impl Decoder
 
-##### fn new(buf_bulk: bool) -> Self
+##### `fn new(buf_bulk: bool) -> Self`
 ```Rust
 let mut decoder = Decoder::new(false);
 ```
 
-##### fn feed(&mut self, buf: &Vec<u8>) -> Result<(), String>
+##### `fn feed(&mut self, buf: &Vec<u8>) -> Result<(), String>`
 ```Rust
 println!("{:?}", decoder.feed(&buf))  // Ok(())
 ```
 
-##### fn read(&mut self) -> Option<Value>
+##### `fn read(&mut self) -> Option<Value>`
 ```Rust
 println!("{:?}", decoder.read())  // Some(Value::NullArray)
 println!("{:?}", decoder.read())  // None
 ```
 
-##### fn buffer_len(&self) -> usize
+##### `fn buffer_len(&self) -> usize`
 ```Rust
 println!("{:?}", decoder.buffer_len())  // 0
 ```
 
-##### fn result_len(&self) -> usize
+##### `fn result_len(&self) -> usize`
 ```Rust
 println!("{:?}", decoder.result_len())  // 0
 ```
+
+[version-image]: https://img.shields.io/crates/v/resp.svg
+[version-url]: https://crates.io/crates/resp
+
+[travis-image]: http://img.shields.io/travis/iorust/resp.svg
+[travis-url]: https://travis-ci.org/iorust/resp
+
+[coveralls-image]: https://coveralls.io/repos/iorust/resp/badge.svg
+[coveralls-url]: https://coveralls.io/r/iorust/resp
+
+[downloads-image]: https://img.shields.io/crates/d/resp.svg
+[downloads-url]: https://crates.io/crates/resp
