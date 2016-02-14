@@ -150,8 +150,8 @@ println!("{:?}", decoder.result_len())  // 0
 [travis-image]: http://img.shields.io/travis/iorust/resp.svg
 [travis-url]: https://travis-ci.org/iorust/resp
 
-[coveralls-image]: https://coveralls.io/repos/iorust/resp/badge.svg
-[coveralls-url]: https://coveralls.io/r/iorust/resp
+[coveralls-image]: https://coveralls.io/repos/github/iorust/resp/badge.svg?branch=master
+[coveralls-url]: https://coveralls.io/github/iorust/resp?branch=master
 
 [downloads-image]: https://img.shields.io/crates/d/resp.svg
 [downloads-url]: https://crates.io/crates/resp
