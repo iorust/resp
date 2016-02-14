@@ -11,7 +11,7 @@ RESP(REdis Serialization Protocol) Serialization for Rust .
 
 ```Rust
 extern crate resp;
-use resp::{ Value, encode, encode_slice, Decoder };
+use resp::{Value, encode, encode_slice, Decoder};
 ```
 
 ### Value
@@ -66,7 +66,7 @@ let val = Value::String("OK正".to_string());
 println!("{:?}", val.encode())  // [43, 79, 75, 230, 173, 163, 13, 10]
 ```
 
-##### `fn to_encoded_string(&self) -> Result<String, FromUtf8Error>`
+##### `fn to_encoded_string(&self) -> Result<String, io::Error>`
 ```Rust
 let val = Value::String("OK正".to_string());
 println!("{:?}", val.to_encoded_string().unwrap())  // "+OK正\r\n"
@@ -109,7 +109,7 @@ Decode redis reply buffers.
 
 #### Examples
 ```Rust
-let mut decoder = Decoder::new(false);
+let mut decoder = Decoder::new();
 let buf = Value::NullArray.encode();
 
 println!("{:?}", decoder.feed(&buf))  // Ok(())
@@ -118,12 +118,17 @@ println!("{:?}", decoder.read())  // Some(Value::NullArray)
 
 #### impl Decoder
 
-##### `fn new(buf_bulk: bool) -> Self`
+##### `fn new() -> Self`
 ```Rust
-let mut decoder = Decoder::new(false);
+let mut decoder = Decoder::new();
 ```
 
-##### `fn feed(&mut self, buf: &Vec<u8>) -> Result<(), String>`
+##### `fn with_buf_bulk() -> Self`
+```Rust
+let mut decoder = Decoder::with_buf_bulk();
+```
+
+##### `fn feed(&mut self, buf: &Vec<u8>) -> Result<(), io:Error>`
 ```Rust
 println!("{:?}", decoder.feed(&buf))  // Ok(())
 ```

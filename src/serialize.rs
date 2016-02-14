@@ -1,8 +1,9 @@
 //! RESP Value
 
 use std::str;
-use std::vec::{ Vec };
-use std::string::{ String };
+use std::vec::Vec;
+use std::string::String;
+use std::io::{Error, ErrorKind};
 
 pub use super::value::{ Value, RESP_MAX };
 
@@ -86,8 +87,8 @@ pub fn encode(value: &Value) -> Vec<u8> {
     }
 }
 
-pub fn encode_slice(array: &[&str]) -> Vec<u8> {
-    let array: Vec<Value> = array.iter().map(|string| Value::Bulk(string.to_string())).collect();
+pub fn encode_slice(slice: &[&str]) -> Vec<u8> {
+    let array: Vec<Value> = slice.iter().map(|string| Value::Bulk(string.to_string())).collect();
     Value::Array(array).encode()
 }
 
@@ -100,16 +101,25 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    pub fn new(buf_bulk: bool) -> Self {
+    pub fn new() -> Self {
         Decoder {
             pos: 0,
-            buf_bulk: buf_bulk,
+            buf_bulk: false,
             buf: Vec::new(),
             res: Vec::with_capacity(8),
         }
     }
 
-    pub fn feed(&mut self, buf: &Vec<u8>) -> Result<(), String> {
+    pub fn with_buf_bulk() -> Self {
+        Decoder {
+            pos: 0,
+            buf_bulk: true,
+            buf: Vec::new(),
+            res: Vec::with_capacity(8),
+        }
+    }
+
+    pub fn feed(&mut self, buf: &Vec<u8>) -> Result<(), Error> {
         self.buf.extend(buf);
         self.parse()
     }
@@ -141,7 +151,7 @@ impl Decoder {
         }
     }
 
-    fn parse(&mut self) -> Result<(), String> {
+    fn parse(&mut self) -> Result<(), Error> {
         match parse_one_value(&self.buf, self.pos, self.buf_bulk) {
             Some(ParseResult::Res(value, pos)) => {
                 self.res.push(value);
@@ -151,7 +161,7 @@ impl Decoder {
             }
             Some(ParseResult::Err(message)) => {
                 self.prune_buf(0);
-                Err(message)
+                Err(Error::new(ErrorKind::InvalidData, message))
             }
             None => Ok(())
         }
@@ -357,7 +367,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_encode_slice() {
+    fn fn_encode_slice() {
         let array = ["SET", "a", "1"];
         assert_eq!(String::from_utf8(encode_slice(&array)).unwrap(),
             "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n");
@@ -368,8 +378,8 @@ mod tests {
     }
 
     #[test]
-    fn it_decoder() {
-        let mut decoder = Decoder::new(false);
+    fn struct_decoder() {
+        let mut decoder = Decoder::new();
         assert_eq!(decoder.buffer_len(), 0);
         assert_eq!(decoder.result_len(), 0);
 
@@ -423,8 +433,8 @@ mod tests {
     }
 
     #[test]
-    fn it_decoder_buf_bulk() {
-        let mut decoder = Decoder::new(true);
+    fn struct_decoder_with_buf_bulk() {
+        let mut decoder = Decoder::with_buf_bulk();
 
         let buf = Value::Null.encode();
         assert_eq!(decoder.feed(&buf).unwrap(), ());
@@ -473,8 +483,8 @@ mod tests {
     }
 
     #[test]
-    fn it_decoder_feed_error() {
-        let mut decoder = Decoder::new(false);
+    fn struct_decoder_feed_error() {
+        let mut decoder = Decoder::new();
 
         let buf = Value::String("OK正".to_string()).encode();
         assert_eq!(decoder.feed(&buf).unwrap(), ());
@@ -507,8 +517,8 @@ mod tests {
     }
 
     #[test]
-    fn it_decoder_continuingly() {
-        let mut decoder = Decoder::new(false);
+    fn struct_decoder_continuingly() {
+        let mut decoder = Decoder::new();
 
         let buf = "$0\r\n".to_string().into_bytes();
         assert_eq!(decoder.feed(&buf).unwrap(), ());

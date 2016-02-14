@@ -1,8 +1,9 @@
 //! RESP Value
 
-use std::vec::{ Vec };
-use std::string::{ String, FromUtf8Error };
-use super::serialize::{ encode };
+use std::vec::Vec;
+use std::string::String;
+use std::io::{Error, ErrorKind};
+use super::serialize::{encode};
 
 /// Represents a RESP value
 /// http://redis.io/topics/protocol
@@ -52,9 +53,9 @@ impl Value {
         encode(self)
     }
 
-    pub fn to_encoded_string(&self) -> Result<String, FromUtf8Error> {
+    pub fn to_encoded_string(&self) -> Result<String, Error> {
         let bytes = self.encode();
-        String::from_utf8(bytes)
+        String::from_utf8(bytes).map_err(|err| Error::new(ErrorKind::InvalidData, err))
     }
 }
 
@@ -64,7 +65,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_is_null() {
+    fn enum_is_null() {
         assert_eq!(Value::Null.is_null(), true);
         assert_eq!(Value::NullArray.is_null(), true);
         assert_eq!(Value::String("OK".to_string()).is_null(), false);
@@ -76,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn it_is_error() {
+    fn enum_is_error() {
         assert_eq!(Value::Null.is_error(), false);
         assert_eq!(Value::NullArray.is_error(), false);
         assert_eq!(Value::String("OK".to_string()).is_error(), false);
@@ -89,31 +90,31 @@ mod tests {
     }
 
     #[test]
-    fn it_encode_null() {
+    fn enum_encode_null() {
         let val = Value::Null;
         assert_eq!(val.to_encoded_string().unwrap(), "$-1\r\n");
     }
 
     #[test]
-    fn it_encode_nullarray() {
+    fn enum_encode_nullarray() {
         let val = Value::NullArray;
         assert_eq!(val.to_encoded_string().unwrap(), "*-1\r\n");
     }
 
     #[test]
-    fn it_encode_string() {
+    fn enum_encode_string() {
         let val = Value::String("OK正".to_string());
         assert_eq!(val.to_encoded_string().unwrap(), "+OK正\r\n");
     }
 
     #[test]
-    fn it_encode_error() {
+    fn enum_encode_error() {
         let val = Value::Error("error message".to_string());
         assert_eq!(val.to_encoded_string().unwrap(), "-error message\r\n");
     }
 
     #[test]
-    fn it_encode_integer() {
+    fn enum_encode_integer() {
         let val = Value::Integer(123456789);
         assert_eq!(val.to_encoded_string().unwrap(), ":123456789\r\n");
 
@@ -122,19 +123,19 @@ mod tests {
     }
 
     #[test]
-    fn it_encode_bulk() {
+    fn enum_encode_bulk() {
         let val = Value::Bulk("OK正".to_string());
         assert_eq!(val.to_encoded_string().unwrap(), "$5\r\nOK正\r\n");
     }
 
     #[test]
-    fn it_encode_bufbulk() {
+    fn enum_encode_bufbulk() {
         let val = Value::BufBulk(vec![79, 75]);
         assert_eq!(val.to_encoded_string().unwrap(), "$2\r\nOK\r\n");
     }
 
     #[test]
-    fn it_encode_array() {
+    fn enum_encode_array() {
         let val = Value::Array(Vec::new());
         assert_eq!(val.to_encoded_string().unwrap(), "*0\r\n");
 

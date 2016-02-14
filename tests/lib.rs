@@ -45,7 +45,7 @@ fn fn_encode_slice() {
 
 #[test]
 fn struct_decoder() {
-    let mut decoder = Decoder::new(false);
+    let mut decoder = Decoder::new();
     assert_eq!(decoder.buffer_len(), 0);
     assert_eq!(decoder.result_len(), 0);
 
