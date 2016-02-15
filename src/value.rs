@@ -2,7 +2,7 @@
 
 use std::vec::Vec;
 use std::string::String;
-use std::io::{Error, ErrorKind};
+use std::io::{Result, Error, ErrorKind};
 use super::serialize::{encode};
 
 /// Represents a RESP value
@@ -53,7 +53,7 @@ impl Value {
         encode(self)
     }
 
-    pub fn to_encoded_string(&self) -> Result<String, Error> {
+    pub fn to_encoded_string(&self) -> Result<String> {
         let bytes = self.encode();
         String::from_utf8(bytes).map_err(|err| Error::new(ErrorKind::InvalidData, err))
     }

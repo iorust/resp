@@ -66,7 +66,7 @@ let val = Value::String("OK正".to_string());
 println!("{:?}", val.encode())  // [43, 79, 75, 230, 173, 163, 13, 10]
 ```
 
-##### `fn to_encoded_string(&self) -> Result<String, io::Error>`
+##### `fn to_encoded_string(&self) -> io::Result<String>`
 ```Rust
 let val = Value::String("OK正".to_string());
 println!("{:?}", val.to_encoded_string().unwrap())  // "+OK正\r\n"
@@ -99,10 +99,7 @@ println!("{:?}", String::from_utf8(encode_slice(&array)))
 
 ```Rust
 struct Decoder {
-    buf_bulk: bool,
-    pos: usize,
-    buf: Vec<u8>,
-    res: Vec<Value>,
+    // some fields omitted
 }
 ```
 Decode redis reply buffers.
@@ -128,7 +125,7 @@ let mut decoder = Decoder::new();
 let mut decoder = Decoder::with_buf_bulk();
 ```
 
-##### `fn feed(&mut self, buf: &Vec<u8>) -> Result<(), io:Error>`
+##### `fn feed(&mut self, buf: &[u8]) -> Result<(), io:Error>`
 ```Rust
 println!("{:?}", decoder.feed(&buf))  // Ok(())
 ```

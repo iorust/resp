@@ -3,7 +3,7 @@
 use std::str;
 use std::vec::Vec;
 use std::string::String;
-use std::io::{Error, ErrorKind};
+use std::io::{Result, Error, ErrorKind};
 
 pub use super::value::{ Value, RESP_MAX };
 
@@ -119,7 +119,7 @@ impl Decoder {
         }
     }
 
-    pub fn feed(&mut self, buf: &Vec<u8>) -> Result<(), Error> {
+    pub fn feed(&mut self, buf: &[u8]) -> Result<()> {
         self.buf.extend(buf);
         self.parse()
     }
@@ -151,7 +151,7 @@ impl Decoder {
         }
     }
 
-    fn parse(&mut self) -> Result<(), Error> {
+    fn parse(&mut self) -> Result<()> {
         match parse_one_value(&self.buf, self.pos, self.buf_bulk) {
             Some(ParseResult::Res(value, pos)) => {
                 self.res.push(value);
@@ -161,7 +161,7 @@ impl Decoder {
             }
             Some(ParseResult::Err(message)) => {
                 self.prune_buf(0);
-                Err(Error::new(ErrorKind::InvalidData, message))
+                Err(Error::new(ErrorKind::InvalidData, message.to_string()))
             }
             None => Ok(())
         }
@@ -179,27 +179,27 @@ impl FillCLRF for Vec<u8> {
     }
 }
 
-fn parse_string(bytes: &[u8]) -> Result<String, String> {
+fn parse_string(bytes: &[u8]) -> Result<String> {
     if let Ok(string) = str::from_utf8(bytes) {
         return Ok(string.to_string());
     }
-    Err("parse string failed".to_string())
+    Err(Error::new(ErrorKind::InvalidData, "parse string failed"))
 }
 
-fn parse_integer(bytes: &[u8]) -> Result<i64, String> {
+fn parse_integer(bytes: &[u8]) -> Result<i64> {
     if let Ok(string) = str::from_utf8(bytes) {
         if let Ok(int) = string.parse::<i64>() {
             return Ok(int);
         }
     }
-    Err("parse integer failed".to_string())
+    Err(Error::new(ErrorKind::InvalidData, "parse integer failed"))
 }
 
 fn is_crlf(a: u8, b: u8) -> bool {
     a == 13 && b == 10
 }
 
-fn read_crlf(buffer: &Vec<u8>, start: usize) -> Option<usize> {
+fn read_crlf(buffer: &[u8], start: usize) -> Option<usize> {
     for pos in start..(buffer.len() - 1) {
         if is_crlf(buffer[pos], buffer[pos + 1]) {
             return Some(pos)
@@ -208,14 +208,36 @@ fn read_crlf(buffer: &Vec<u8>, start: usize) -> Option<usize> {
     None
 }
 
+enum ErrorMessage {
+    ParseString,
+    ParseError,
+    ParseInteger,
+    ParseBulk,
+    ParseArray,
+    ParseInvalid,
+}
+
+impl ErrorMessage {
+    fn to_string(&self) -> &str {
+        match self {
+            &ErrorMessage::ParseString => "Parse '+' failed",
+            &ErrorMessage::ParseError => "Parse '-' failed",
+            &ErrorMessage::ParseInteger => "Parse ':' failed",
+            &ErrorMessage::ParseBulk => "Parse '$' failed",
+            &ErrorMessage::ParseArray => "Parse '*' failed",
+            &ErrorMessage::ParseInvalid => "Invalid Chunk: parse failed",
+        }
+    }
+}
+
 enum ParseResult {
     // parse success
     Res(Value, usize),
     // parse failed
-    Err(String),
+    Err(ErrorMessage),
 }
 
-fn parse_one_value(buffer: &Vec<u8>, offset: usize, buf_bulk: bool) -> Option<ParseResult> {
+fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<ParseResult> {
     // Exclude first byte, and two "CLRF" bytes.
     // Means that buf is too short, wait more.
     let buf_len = buffer.len();
@@ -234,7 +256,7 @@ fn parse_one_value(buffer: &Vec<u8>, offset: usize, buf_bulk: bool) -> Option<Pa
                 offset = pos + 2;
                 match parse_string(bytes) {
                     Ok(string) => Some(ParseResult::Res(Value::String(string), offset)),
-                    Err(_) => Some(ParseResult::Err("Parse '+' failed".to_string())),
+                    Err(_) => Some(ParseResult::Err(ErrorMessage::ParseString)),
                 }
             } else {
                 None
@@ -248,7 +270,7 @@ fn parse_one_value(buffer: &Vec<u8>, offset: usize, buf_bulk: bool) -> Option<Pa
                 offset = pos + 2;
                 match parse_string(bytes) {
                     Ok(string) => Some(ParseResult::Res(Value::Error(string), offset)),
-                    Err(_) => Some(ParseResult::Err("Parse '-' failed".to_string())),
+                    Err(_) => Some(ParseResult::Err(ErrorMessage::ParseError)),
                 }
             } else {
                 None
@@ -262,7 +284,7 @@ fn parse_one_value(buffer: &Vec<u8>, offset: usize, buf_bulk: bool) -> Option<Pa
                 offset = pos + 2;
                 match parse_integer(bytes) {
                     Ok(int) => Some(ParseResult::Res(Value::Integer(int), offset)),
-                    Err(_) => Some(ParseResult::Err("Parse ':' failed".to_string())),
+                    Err(_) => Some(ParseResult::Err(ErrorMessage::ParseInteger)),
                 }
             } else {
                 None
@@ -282,7 +304,7 @@ fn parse_one_value(buffer: &Vec<u8>, offset: usize, buf_bulk: bool) -> Option<Pa
                         }
 
                         if int < -1 || int >= RESP_MAX {
-                            return Some(ParseResult::Err("Parse '$' failed".to_string()));
+                            return Some(ParseResult::Err(ErrorMessage::ParseBulk));
                         }
 
                         let int = int as usize;
@@ -292,7 +314,7 @@ fn parse_one_value(buffer: &Vec<u8>, offset: usize, buf_bulk: bool) -> Option<Pa
                         }
 
                         if !is_crlf(buffer[end], buffer[end + 1]) {
-                            return Some(ParseResult::Err("Parse '$' failed".to_string()));
+                            return Some(ParseResult::Err(ErrorMessage::ParseBulk));
                         }
 
                         let bytes = buffer[offset..end].as_ref();
@@ -306,11 +328,11 @@ fn parse_one_value(buffer: &Vec<u8>, offset: usize, buf_bulk: bool) -> Option<Pa
 
                         match parse_string(bytes) {
                             Ok(string) => Some(ParseResult::Res(Value::Bulk(string), offset)),
-                            Err(_) => Some(ParseResult::Err("Parse '$' failed".to_string())),
+                            Err(_) => Some(ParseResult::Err(ErrorMessage::ParseBulk)),
                         }
                     }
 
-                    Err(_) => Some(ParseResult::Err("Parse '$' failed".to_string())),
+                    Err(_) => Some(ParseResult::Err(ErrorMessage::ParseBulk)),
                 }
             } else {
                 None
@@ -330,7 +352,7 @@ fn parse_one_value(buffer: &Vec<u8>, offset: usize, buf_bulk: bool) -> Option<Pa
                         }
 
                         if int < -1 || int >= RESP_MAX {
-                            return Some(ParseResult::Err("Parse '*' failed".to_string()));
+                            return Some(ParseResult::Err(ErrorMessage::ParseArray));
                         }
 
                         let mut array: Vec<Value> = Vec::with_capacity(int as usize);
@@ -351,14 +373,14 @@ fn parse_one_value(buffer: &Vec<u8>, offset: usize, buf_bulk: bool) -> Option<Pa
 
                         Some(ParseResult::Res(Value::Array(array), offset))
                     }
-                    Err(_) => Some(ParseResult::Err("Parse '*' failed".to_string())),
+                    Err(_) => Some(ParseResult::Err(ErrorMessage::ParseArray)),
                 }
             } else {
                 None
             }
         }
 
-        _ => Some(ParseResult::Err("Invalid Chunk: parse failed".to_string())),
+        _ => Some(ParseResult::Err(ErrorMessage::ParseInvalid)),
     }
 }
 
@@ -485,6 +507,11 @@ mod tests {
     #[test]
     fn struct_decoder_feed_error() {
         let mut decoder = Decoder::new();
+
+        let buf: Vec<u8> = Vec::new();
+
+        assert_eq!(decoder.feed(&buf).unwrap(), ());
+        assert_eq!(decoder.read(), None);
 
         let buf = Value::String("OK正".to_string()).encode();
         assert_eq!(decoder.feed(&buf).unwrap(), ());
