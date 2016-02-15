@@ -95,7 +95,6 @@ pub fn encode_slice(slice: &[&str]) -> Vec<u8> {
 #[derive(Debug)]
 pub struct Decoder {
     buf_bulk: bool,
-    pos: usize,
     buf: Vec<u8>,
     res: Vec<Value>,
 }
@@ -103,7 +102,6 @@ pub struct Decoder {
 impl Decoder {
     pub fn new() -> Self {
         Decoder {
-            pos: 0,
             buf_bulk: false,
             buf: Vec::new(),
             res: Vec::with_capacity(8),
@@ -112,7 +110,6 @@ impl Decoder {
 
     pub fn with_buf_bulk() -> Self {
         Decoder {
-            pos: 0,
             buf_bulk: true,
             buf: Vec::new(),
             res: Vec::with_capacity(8),
@@ -152,11 +149,10 @@ impl Decoder {
     }
 
     fn parse(&mut self) -> Result<()> {
-        match parse_one_value(&self.buf, self.pos, self.buf_bulk) {
+        match parse_one_value(&self.buf, 0, self.buf_bulk) {
             Some(ParseResult::Res(value, pos)) => {
                 self.res.push(value);
                 self.prune_buf(pos);
-                self.pos = 0;
                 self.parse()
             }
             Some(ParseResult::Err(message)) => {
@@ -241,14 +237,13 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
     // Exclude first byte, and two "CLRF" bytes.
     // Means that buf is too short, wait more.
     let buf_len = buffer.len();
-    let prev_offset = offset;
     if offset + 3 > buf_len {
         return None;
     }
 
-    let mut offset = prev_offset + 1;
-
-    match buffer[prev_offset] {
+    let identifier = buffer[offset];
+    let mut offset = offset + 1;
+    match identifier {
         /// Value::String
         43 => {
             if let Some(pos) = read_crlf(buffer, offset) {
@@ -508,9 +503,7 @@ mod tests {
     fn struct_decoder_feed_error() {
         let mut decoder = Decoder::new();
 
-        let buf: Vec<u8> = Vec::new();
-
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
+        assert_eq!(decoder.feed(&[]).unwrap(), ());
         assert_eq!(decoder.read(), None);
 
         let buf = Value::String("OK正".to_string()).encode();
@@ -526,6 +519,11 @@ mod tests {
 
         let buf = "$\r\n".to_string().into_bytes();
         assert_eq!(decoder.feed(&buf).is_err(), true);
+
+        // feed a available data after error
+        let buf = Value::Null.encode();
+        assert_eq!(decoder.feed(&buf).unwrap(), ());
+        assert_eq!(decoder.read().unwrap(), Value::Null);
 
         let buf = "$-2\r\n".to_string().into_bytes();
         assert_eq!(decoder.feed(&buf).is_err(), true);
