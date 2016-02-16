@@ -2,7 +2,7 @@
 
 extern crate resp;
 
-use resp::{ Value, encode, encode_slice, Decoder };
+use resp::{Value, encode, encode_slice, Decoder};
 
 #[test]
 fn enum_is_null() {
