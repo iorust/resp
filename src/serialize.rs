@@ -5,7 +5,7 @@ use std::vec::Vec;
 use std::string::String;
 use std::io::{Result, Error, ErrorKind};
 
-pub use super::value::{ Value, RESP_MAX };
+pub use super::value::{Value, RESP_MAX};
 
 pub fn encode(value: &Value) -> Vec<u8> {
     match value {
