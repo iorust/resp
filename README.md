@@ -72,6 +72,37 @@ let val = Value::String("OK正".to_string());
 println!("{:?}", val.to_encoded_string().unwrap())  // "+OK正\r\n"
 ```
 
+##### `fn to_beautify_string(&self) -> String`
+```Rust
+println!("{}", the_value.to_beautify_string());
+// 1) (Null)
+// 2) (Null Array)
+// 3) "OK"
+// 4) (Error) Err
+// 5) (Integer) 123
+// 6) Bulk String
+// 7) (Empty Array)
+// 8) (Buffer) 00 64
+// 9)
+//    1) (Empty Array)
+//    2) (Integer) 123
+//    3) Bulk String
+// 10)
+//    1) (Null)
+//    2) (Null Array)
+//    3) "OK"
+//    4) (Error) Err
+//    5) (Integer) 123
+//    6) Bulk String
+//    7) (Empty Array)
+//    8) (Buffer) 00 64
+//    9)
+//        1) (Empty Array)
+//        2) (Integer) 123
+//        3) Bulk String
+// 11) (Null)
+```
+
 ### encode
 
 Encode a RESP value to buffer.

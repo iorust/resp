@@ -1,6 +1,5 @@
 //! RESP Value
 
-use std::fmt;
 use std::vec::Vec;
 use std::string::String;
 use std::io::{Result, Error, ErrorKind};
@@ -58,6 +57,31 @@ impl Value {
         let bytes = self.encode();
         String::from_utf8(bytes).map_err(|err| Error::new(ErrorKind::InvalidData, err))
     }
+
+    pub fn to_beautify_string(&self) -> String {
+        match self {
+            &Value::Null => format!("{}", "(Null)"),
+            &Value::NullArray => format!("{}", "(Null Array)"),
+            &Value::String(ref string) => format!("\"{}\"", string),
+            &Value::Error(ref error) => format!("(Error) {}", error),
+            &Value::Integer(int) => format!("(Integer) {}", int.to_string()),
+            &Value::Bulk(ref string) => format!("{}", string),
+            &Value::BufBulk(ref buf) => {
+                if buf.len() == 0 {
+                    return format!("{}", "(Empty Buffer)");
+                }
+                let mut string = String::with_capacity(52);
+                for u in buf.iter().take(16) {
+                    string.push_str(&format_to_hex_str(*u));
+                }
+                if buf.len() > 16 {
+                    string.push_str(" ...");
+                }
+                format!("(Buffer) {}", &string[1..])
+            }
+            &Value::Array(ref array) => format!("{}", format_array_to_str(array, 0)),
+        }
+    }
 }
 
 fn format_to_hex_str(u: u8) -> String {
@@ -68,59 +92,47 @@ fn format_to_hex_str(u: u8) -> String {
     }
 }
 
-fn format_array_to_str(array: &Vec<Value>, index: usize, depth: usize) -> String {
+fn format_index_str(index: usize, num_width: usize) -> String {
+    let mut string = index.to_string();
+    while string.len() < num_width {
+        string.insert(0, ' ');
+    }
+    format!("{}) ", string)
+}
+
+fn format_array_to_str(array: &Vec<Value>, depth: usize) -> String {
+    if array.len() == 0 {
+        return format!("{}", "(Empty Array)");
+    }
+
     let mut prefix = String::with_capacity(depth * 2);
     for _ in 0..depth {
-        prefix.push_str("  ");
+        prefix.push_str("    ");
     }
     let prefix = &prefix;
 
     let mut string = String::new();
-    if index > 0 {
-        string.push_str(&prefix[2..]);
-        string.push_str(&(index + 1).to_string());
-        string.push_str(")\n");
-    }
+    let len = array.len();
+    let num_width = len.to_string().len();
     for (i, value) in array.iter().enumerate() {
+        string.push_str(prefix);
+        string.push_str(&format_index_str(i + 1, num_width));
         match value {
-            &Value::Array(ref sub) => string.push_str(&format_array_to_str(sub, i, depth + 1)),
-            _ => {
-                string.push_str(prefix);
-                string.push_str(&(i + 1).to_string());
-                string.push_str(") ");
-                string.push_str(&value.to_string());
-                string.push_str("\n");
+            &Value::Array(ref sub_array) => {
+                if sub_array.len() > 0 {
+                    // start new line for sub array.
+                    string.pop();
+                    string.push('\n');
+                }
+                string.push_str(&format_array_to_str(sub_array, depth + 1));
             }
+            _ => string.push_str(&value.to_beautify_string()),
         };
-    }
-    string
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Value::Null => write!(f, "{}", "(Null)"),
-            &Value::NullArray => write!(f, "{}", "(Null Array)"),
-            &Value::String(ref string) => write!(f, "\"{}\"", string),
-            &Value::Error(ref error) => write!(f, "\"{}\"", error),
-            &Value::Integer(int) => write!(f, "{}", int.to_string()),
-            &Value::Bulk(ref string) => write!(f, "\"{}\"", string),
-            &Value::BufBulk(ref buf) => {
-                let mut string = String::with_capacity(62);
-                string.push_str("<Buffer");
-                for u in buf.iter().take(16) {
-                    string.push_str(&format_to_hex_str(*u));
-                }
-                if buf.len() > 16 {
-                    string.push_str(" ... >");
-                } else {
-                    string.push_str(">");
-                }
-                write!(f, "{}", string)
-            }
-            &Value::Array(ref array) => write!(f, "{}", format_array_to_str(array, 0, 0)),
+        if i + 1 < len {
+            string.push('\n');
         }
     }
+    string
 }
 
 #[cfg(test)]
@@ -216,17 +228,21 @@ mod tests {
     }
 
     #[test]
-    fn enum_fmt() {
-        assert_eq!(Value::Null.to_string(), "(Null)");
-        assert_eq!(Value::NullArray.to_string(), "(Null Array)");
-        assert_eq!(Value::String("OK".to_string()).to_string(), "\"OK\"");
-        assert_eq!(Value::Error("Err".to_string()).to_string(), "\"Err\"");
-        assert_eq!(Value::Integer(123).to_string(), "123");
-        assert_eq!(Value::Bulk("Bulk String".to_string()).to_string(), "\"Bulk String\"");
-        assert_eq!(Value::BufBulk(vec![0, 100]).to_string(), "<Buffer 00 64>");
-        assert_eq!(Value::BufBulk(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]).to_string(),
-            "<Buffer 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f ... >");
-        assert_eq!(Value::Array(vec![Value::Null, Value::Integer(123)]).to_string(), "1) (Null)\n2) 123\n");
+    fn enum_to_beautify_string() {
+        assert_eq!(Value::Null.to_beautify_string(), "(Null)");
+        assert_eq!(Value::NullArray.to_beautify_string(), "(Null Array)");
+        assert_eq!(Value::String("OK".to_string()).to_beautify_string(), "\"OK\"");
+        assert_eq!(Value::Error("Err".to_string()).to_beautify_string(), "(Error) Err");
+        assert_eq!(Value::Integer(123).to_beautify_string(), "(Integer) 123");
+        assert_eq!(Value::Bulk("Bulk String".to_string()).to_beautify_string(), "Bulk String");
+        assert_eq!(Value::BufBulk(vec![]).to_beautify_string(), "(Empty Buffer)");
+        assert_eq!(Value::BufBulk(vec![0, 100]).to_beautify_string(), "(Buffer) 00 64");
+        assert_eq!(Value::BufBulk(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+            17, 18]).to_beautify_string(),
+            "(Buffer) 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f ...");
+        assert_eq!(Value::Array(vec![]).to_beautify_string(), "(Empty Array)");
+        assert_eq!(Value::Array(vec![Value::Null, Value::Integer(123)]).to_beautify_string(),
+            "1) (Null)\n2) (Integer) 123");
 
         let _values = vec![
             Value::Null,
@@ -235,8 +251,9 @@ mod tests {
             Value::Error("Err".to_string()),
             Value::Integer(123),
             Value::Bulk("Bulk String".to_string()),
+            Value::Array(vec![]),
             Value::BufBulk(vec![0, 100]),
-            Value::Array(vec![Value::Null, Value::Integer(123)])
+            Value::Array(vec![Value::Array(vec![]), Value::Integer(123), Value::Bulk("Bulk String".to_string())])
         ];
         let mut values = _values.clone();
         values.push(Value::Array(_values));
@@ -245,53 +262,62 @@ mod tests {
         _values.push(Value::Array(values));
         _values.push(Value::Null);
 
-let enum_fmt_result = "1) (Null)
-2) (Null Array)
-3) \"OK\"
-4) \"Err\"
-5) 123
-6) \"Bulk String\"
-7) <Buffer 00 64>
-8)
-  1) (Null)
-  2) 123
-9)
-  1) (Null)
-  2) (Null Array)
-  3) \"OK\"
-  4) \"Err\"
-  5) 123
-  6) \"Bulk String\"
-  7) <Buffer 00 64>
-  8)
-    1) (Null)
-    2) 123
-10) (Null)
-11)
-  1) (Null)
-  2) (Null Array)
-  3) \"OK\"
-  4) \"Err\"
-  5) 123
-  6) \"Bulk String\"
-  7) <Buffer 00 64>
-  8)
-    1) (Null)
-    2) 123
-  9)
+let enum_fmt_result = " 1) (Null)
+ 2) (Null Array)
+ 3) \"OK\"
+ 4) (Error) Err
+ 5) (Integer) 123
+ 6) Bulk String
+ 7) (Empty Array)
+ 8) (Buffer) 00 64
+ 9)
+    1) (Empty Array)
+    2) (Integer) 123
+    3) Bulk String
+10)
     1) (Null)
     2) (Null Array)
     3) \"OK\"
-    4) \"Err\"
-    5) 123
-    6) \"Bulk String\"
-    7) <Buffer 00 64>
-    8)
-      1) (Null)
-      2) 123
-  10) (Null)
-12) (Null)
-";
-        assert_eq!(Value::Array(_values).to_string(), enum_fmt_result);
+    4) (Error) Err
+    5) (Integer) 123
+    6) Bulk String
+    7) (Empty Array)
+    8) (Buffer) 00 64
+    9)
+        1) (Empty Array)
+        2) (Integer) 123
+        3) Bulk String
+11) (Null)
+12)
+     1) (Null)
+     2) (Null Array)
+     3) \"OK\"
+     4) (Error) Err
+     5) (Integer) 123
+     6) Bulk String
+     7) (Empty Array)
+     8) (Buffer) 00 64
+     9)
+        1) (Empty Array)
+        2) (Integer) 123
+        3) Bulk String
+    10)
+        1) (Null)
+        2) (Null Array)
+        3) \"OK\"
+        4) (Error) Err
+        5) (Integer) 123
+        6) Bulk String
+        7) (Empty Array)
+        8) (Buffer) 00 64
+        9)
+            1) (Empty Array)
+            2) (Integer) 123
+            3) Bulk String
+    11) (Null)
+13) (Null)";
+
+        assert_eq!(Value::Array(_values).to_beautify_string(), enum_fmt_result);
+        // println!("{}", Value::Array(_values).to_beautify_string());
     }
 }
