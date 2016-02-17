@@ -10,22 +10,20 @@ use super::Value;
 /// up to 512 MB in length
 const RESP_MAX: i64 = 512 * 1024 * 1024;
 const CLRF_BYTES: [u8; 2] = [13, 10];
-const NULL_BYTES: [u8; 3] = [36, 45, 49];
-const NULL_ARRAY_BYTES: [u8; 3] = [42, 45, 49];
+const NULL_BYTES: [u8; 5] = [36, 45, 49, 13, 10];
+const NULL_ARRAY_BYTES: [u8; 5] = [42, 45, 49, 13, 10];
 
 pub fn encode(value: &Value) -> Vec<u8> {
     match value {
         &Value::Null => {
             let mut res: Vec<u8> = Vec::with_capacity(5);
             res.extend_from_slice(&NULL_BYTES);
-            res.extend_from_slice(&CLRF_BYTES);
             res
         }
 
         &Value::NullArray => {
             let mut res: Vec<u8> = Vec::with_capacity(5);
             res.extend_from_slice(&NULL_ARRAY_BYTES);
-            res.extend_from_slice(&CLRF_BYTES);
             res
         }
 
