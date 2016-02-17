@@ -8,9 +8,6 @@ use super::serialize::{encode};
 /// Represents a RESP value
 /// http://redis.io/topics/protocol
 
-/// up to 512 MB in length
-pub const RESP_MAX: i64 = 512 * 1024 * 1024;
-
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Value {
     /// Null bulk reply, $-1\r\n

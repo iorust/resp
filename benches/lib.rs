@@ -24,12 +24,7 @@ fn prepare_values() -> Value {
     a.push(Value::Array(b));
     a.push(Value::Null);
 
-    let value = Value::Array(a);
-    let buf = value.encode();
-    let mut decoder = Decoder::new();
-    decoder.feed(&buf).unwrap();
-    assert_eq!(value, decoder.read().unwrap());
-    value
+    Value::Array(a)
 }
 
 #[bench]
@@ -41,10 +36,10 @@ fn encode_values(b: &mut Bencher) {
 #[bench]
 fn decode_values(b: &mut Bencher) {
     let value = prepare_values();
-    let buf = value.encode();
+    let buffers = value.encode();
     b.iter(|| {
         let mut decoder = Decoder::new();
-        decoder.feed(&buf).unwrap();
-        decoder.read().unwrap()
+        decoder.feed(&buffers).unwrap();
+        assert_eq!(decoder.read().unwrap(), value);
     });
 }

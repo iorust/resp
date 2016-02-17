@@ -1,6 +1,6 @@
 [package]
 name = "resp"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Qing Yan <admin@zensh.com>"]
 description = "RESP(REdis Serialization Protocol) Serialization for Rust."
 documentation = "https://github.com/iorust/resp"

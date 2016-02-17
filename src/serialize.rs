@@ -5,41 +5,43 @@ use std::vec::Vec;
 use std::string::String;
 use std::io::{Result, Error, ErrorKind};
 
-pub use super::value::{Value, RESP_MAX};
+use super::Value;
+
+/// up to 512 MB in length
+const RESP_MAX: i64 = 512 * 1024 * 1024;
+const CLRF_BYTES: [u8; 2] = [13, 10];
+const NULL_BYTES: [u8; 3] = [36, 45, 49];
+const NULL_ARRAY_BYTES: [u8; 3] = [42, 45, 49];
 
 pub fn encode(value: &Value) -> Vec<u8> {
     match value {
         &Value::Null => {
             let mut res: Vec<u8> = Vec::with_capacity(5);
-            res.push(36);
-            res.push(45);
-            res.push(49);
-            res.fill_clrf();
+            res.extend_from_slice(&NULL_BYTES);
+            res.extend_from_slice(&CLRF_BYTES);
             res
         }
 
         &Value::NullArray => {
             let mut res: Vec<u8> = Vec::with_capacity(5);
-            res.push(42);
-            res.push(45);
-            res.push(49);
-            res.fill_clrf();
+            res.extend_from_slice(&NULL_ARRAY_BYTES);
+            res.extend_from_slice(&CLRF_BYTES);
             res
         }
 
         &Value::String(ref value) => {
             let mut res: Vec<u8> = Vec::with_capacity(value.len() + 3);
             res.push(43);
-            res.extend(value.as_bytes());
-            res.fill_clrf();
+            res.extend_from_slice(value.as_bytes());
+            res.extend_from_slice(&CLRF_BYTES);
             res
         }
 
         &Value::Error(ref value) => {
             let mut res: Vec<u8> = Vec::with_capacity(value.len() + 3);
             res.push(45);
-            res.extend(value.as_bytes());
-            res.fill_clrf();
+            res.extend_from_slice(value.as_bytes());
+            res.extend_from_slice(&CLRF_BYTES);
             res
         }
 
@@ -47,8 +49,8 @@ pub fn encode(value: &Value) -> Vec<u8> {
             let value = value.to_string();
             let mut res: Vec<u8> = Vec::with_capacity(value.len() + 3);
             res.push(58);
-            res.extend(value.as_bytes());
-            res.fill_clrf();
+            res.extend_from_slice(value.as_bytes());
+            res.extend_from_slice(&CLRF_BYTES);
             res
         }
 
@@ -56,10 +58,10 @@ pub fn encode(value: &Value) -> Vec<u8> {
             let len = value.len().to_string();
             let mut res: Vec<u8> = Vec::with_capacity(len.len() + value.len() + 5);
             res.push(36);
-            res.extend(len.as_bytes());
-            res.fill_clrf();
-            res.extend(value.as_bytes());
-            res.fill_clrf();
+            res.extend_from_slice(len.as_bytes());
+            res.extend_from_slice(&CLRF_BYTES);
+            res.extend_from_slice(value.as_bytes());
+            res.extend_from_slice(&CLRF_BYTES);
             res
         }
 
@@ -67,10 +69,10 @@ pub fn encode(value: &Value) -> Vec<u8> {
             let len = buffer.len().to_string();
             let mut res: Vec<u8> = Vec::with_capacity(len.len() + buffer.len() + 5);
             res.push(36);
-            res.extend(len.as_bytes());
-            res.fill_clrf();
-            res.extend(buffer);
-            res.fill_clrf();
+            res.extend_from_slice(len.as_bytes());
+            res.extend_from_slice(&CLRF_BYTES);
+            res.extend_from_slice(buffer);
+            res.extend_from_slice(&CLRF_BYTES);
             res
         }
 
@@ -78,9 +80,10 @@ pub fn encode(value: &Value) -> Vec<u8> {
             let len = vec.len().to_string();
             let mut res: Vec<u8> = Vec::new();
             res.push(42);
-            res.extend(len.as_bytes());
-            res.fill_clrf();
-            res.extend(vec.iter().flat_map(|value| value.encode()));
+            res.extend_from_slice(len.as_bytes());
+            res.extend_from_slice(&CLRF_BYTES);
+            let bytes: Vec<u8> = vec.iter().flat_map(|value| value.encode()).collect();
+            res.extend_from_slice(&bytes);
             res.shrink_to_fit();
             res
         }
@@ -161,17 +164,6 @@ impl Decoder {
             }
             None => Ok(())
         }
-    }
-}
-
-trait FillCLRF {
-    fn fill_clrf(&mut self);
-}
-
-impl FillCLRF for Vec<u8> {
-    fn fill_clrf(&mut self) {
-        self.push(13);
-        self.push(10);
     }
 }
 
@@ -382,6 +374,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::Value;
 
     #[test]
     fn fn_encode_slice() {
