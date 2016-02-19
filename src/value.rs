@@ -89,40 +89,32 @@ fn format_to_hex_str(u: u8) -> String {
     }
 }
 
-fn format_index_str(index: usize, num_width: usize) -> String {
+fn format_index_str(index: usize, num_len: usize) -> String {
     let mut string = index.to_string();
-    while string.len() < num_width {
+    while string.len() < num_len {
         string.insert(0, ' ');
     }
     format!("{}) ", string)
 }
 
-fn format_array_to_str(array: &Vec<Value>, depth: usize) -> String {
+fn format_array_to_str(array: &Vec<Value>, min_index_len: usize) -> String {
     if array.len() == 0 {
         return format!("{}", "(Empty Array)");
     }
 
-    let mut prefix = String::with_capacity(depth * 2);
-    for _ in 0..depth {
-        prefix.push_str("    ");
-    }
-    let prefix = &prefix;
-
     let mut string = String::new();
+    let mut index_len = min_index_len;
     let len = array.len();
-    let num_width = len.to_string().len();
+    let num_len = len.to_string().len();
+    if num_len > index_len {
+        index_len = num_len;
+    }
     for (i, value) in array.iter().enumerate() {
-        string.push_str(prefix);
-        string.push_str(&format_index_str(i + 1, num_width));
+        // first element don't need indent.
+        let num_len = if i == 0 { index_len - min_index_len } else { index_len };
+        string.push_str(&format_index_str(i + 1, num_len));
         match value {
-            &Value::Array(ref sub_array) => {
-                if sub_array.len() > 0 {
-                    // start new line for sub array.
-                    string.pop();
-                    string.push('\n');
-                }
-                string.push_str(&format_array_to_str(sub_array, depth + 1));
-            }
+            &Value::Array(ref sub) => string.push_str(&format_array_to_str(sub, index_len + 3)),
             _ => string.push_str(&value.to_beautify_string()),
         };
         if i + 1 < len {
@@ -267,12 +259,10 @@ let enum_fmt_result = " 1) (Null)
  6) Bulk String
  7) (Empty Array)
  8) (Buffer) 00 64
- 9)
-    1) (Empty Array)
+ 9) 1) (Empty Array)
     2) (Integer) 123
     3) Bulk String
-10)
-    1) (Null)
+10) 1) (Null)
     2) (Null Array)
     3) \"OK\"
     4) (Error) Err
@@ -280,38 +270,33 @@ let enum_fmt_result = " 1) (Null)
     6) Bulk String
     7) (Empty Array)
     8) (Buffer) 00 64
-    9)
-        1) (Empty Array)
-        2) (Integer) 123
-        3) Bulk String
+    9) 1) (Empty Array)
+       2) (Integer) 123
+       3) Bulk String
 11) (Null)
-12)
-     1) (Null)
-     2) (Null Array)
-     3) \"OK\"
-     4) (Error) Err
-     5) (Integer) 123
-     6) Bulk String
-     7) (Empty Array)
-     8) (Buffer) 00 64
-     9)
-        1) (Empty Array)
-        2) (Integer) 123
-        3) Bulk String
-    10)
-        1) (Null)
-        2) (Null Array)
-        3) \"OK\"
-        4) (Error) Err
-        5) (Integer) 123
-        6) Bulk String
-        7) (Empty Array)
-        8) (Buffer) 00 64
-        9)
-            1) (Empty Array)
-            2) (Integer) 123
-            3) Bulk String
-    11) (Null)
+12) 1) (Null)
+    2) (Null Array)
+    3) \"OK\"
+    4) (Error) Err
+    5) (Integer) 123
+    6) Bulk String
+    7) (Empty Array)
+    8) (Buffer) 00 64
+    9) 1) (Empty Array)
+       2) (Integer) 123
+       3) Bulk String
+   10) 1) (Null)
+       2) (Null Array)
+       3) \"OK\"
+       4) (Error) Err
+       5) (Integer) 123
+       6) Bulk String
+       7) (Empty Array)
+       8) (Buffer) 00 64
+       9) 1) (Empty Array)
+          2) (Integer) 123
+          3) Bulk String
+   11) (Null)
 13) (Null)";
 
         assert_eq!(Value::Array(_values).to_beautify_string(), enum_fmt_result);
