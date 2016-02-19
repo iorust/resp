@@ -1,11 +1,15 @@
 RESP
 ====
-RESP(REdis Serialization Protocol) Serialization for Rust .
+RESP(REdis Serialization Protocol) Serialization for Rust.
 
 [![Crates version][version-image]][version-url]
 [![Build Status][travis-image]][travis-url]
 [![Coverage Status][coveralls-image]][coveralls-url]
 [![Crates downloads][downloads-image]][downloads-url]
+
+Implementations:
+
+- [redis-cli](https://github.com/iorust/redis-cli) redis CLI.
 
 ## API
 
@@ -40,67 +44,88 @@ RESP values.
 
 #### Examples
 ```Rust
-let err = Value::Error("error!".to_string());
-let nul = Value::Null;
+let error = Value::Error("error!".to_string());
+let null = Value::Null;
 ```
 
 #### impl Value
 
 ##### `fn is_null(&self) -> bool`
 ```Rust
-println!("{:?}", Value::Null.is_null())  // true
-println!("{:?}", Value::NullArray.is_null())  // true
-println!("{:?}", Value::Integer(123).is_null())  // false
+println!("{:?}", Value::Null.is_null());  // true
+println!("{:?}", Value::NullArray.is_null());  // true
+println!("{:?}", Value::Integer(123).is_null());  // false
 ```
 
 ##### `fn is_error(&self) -> bool`
 ```Rust
-println!("{:?}", Value::Null.is_error())  // false
-println!("{:?}", Value::NullArray.is_error())  // false
-println!("{:?}", Value::Error("".to_string()).is_error())  // true
+println!("{:?}", Value::Null.is_error());  // false
+println!("{:?}", Value::NullArray.is_error());  // false
+println!("{:?}", Value::Error("".to_string()).is_error());  // true
 ```
 
 ##### `fn encode(&self) -> Vec<u8>`
 ```Rust
 let val = Value::String("OK正".to_string());
-println!("{:?}", val.encode())  // [43, 79, 75, 230, 173, 163, 13, 10]
+println!("{:?}", val.encode());  // [43, 79, 75, 230, 173, 163, 13, 10]
 ```
 
 ##### `fn to_encoded_string(&self) -> io::Result<String>`
 ```Rust
 let val = Value::String("OK正".to_string());
-println!("{:?}", val.to_encoded_string().unwrap())  // "+OK正\r\n"
+println!("{:?}", val.to_encoded_string().unwrap());  // "+OK正\r\n"
 ```
 
 ##### `fn to_beautify_string(&self) -> String`
-```Rust
-println!("{}", the_value.to_beautify_string());
-// 1) (Null)
-// 2) (Null Array)
-// 3) "OK"
-// 4) (Error) Err
-// 5) (Integer) 123
-// 6) Bulk String
-// 7) (Empty Array)
-// 8) (Buffer) 00 64
-// 9)
-//    1) (Empty Array)
-//    2) (Integer) 123
-//    3) Bulk String
-// 10)
-//    1) (Null)
-//    2) (Null Array)
-//    3) "OK"
-//    4) (Error) Err
-//    5) (Integer) 123
-//    6) Bulk String
-//    7) (Empty Array)
-//    8) (Buffer) 00 64
-//    9)
-//        1) (Empty Array)
-//        2) (Integer) 123
-//        3) Bulk String
-// 11) (Null)
+A test result:
+```
+ 1) (Null)
+ 2) (Null Array)
+ 3) \"OK\"
+ 4) (Error) Err
+ 5) (Integer) 123
+ 6) Bulk String
+ 7) (Empty Array)
+ 8) (Buffer) 00 64
+ 9) 1) (Empty Array)
+    2) (Integer) 123
+    3) Bulk String
+10) 1) (Null)
+    2) (Null Array)
+    3) \"OK\"
+    4) (Error) Err
+    5) (Integer) 123
+    6) Bulk String
+    7) (Empty Array)
+    8) (Buffer) 00 64
+    9) 1) (Empty Array)
+       2) (Integer) 123
+       3) Bulk String
+11) (Null)
+12) 1) (Null)
+    2) (Null Array)
+    3) \"OK\"
+    4) (Error) Err
+    5) (Integer) 123
+    6) Bulk String
+    7) (Empty Array)
+    8) (Buffer) 00 64
+    9) 1) (Empty Array)
+       2) (Integer) 123
+       3) Bulk String
+   10) 1) (Null)
+       2) (Null Array)
+       3) \"OK\"
+       4) (Error) Err
+       5) (Integer) 123
+       6) Bulk String
+       7) (Empty Array)
+       8) (Buffer) 00 64
+       9) 1) (Empty Array)
+          2) (Integer) 123
+          3) Bulk String
+   11) (Null)
+13) (Null)
 ```
 
 ### encode
@@ -111,7 +136,7 @@ Encode a RESP value to buffer.
 
 ```Rust
 let val = Value::String("OK正".to_string());
-println!("{:?}", encode(&val))  // [43, 79, 75, 230, 173, 163, 13, 10]
+println!("{:?}", encode(&val));  // [43, 79, 75, 230, 173, 163, 13, 10]
 ```
 
 ### encode_slice
@@ -122,7 +147,7 @@ Encode a slice of string to RESP request buffer. It is usefull for redis client 
 
 ```Rust
 let array = ["SET", "a", "1"];
-println!("{:?}", String::from_utf8(encode_slice(&array)))
+println!("{:?}", String::from_utf8(encode_slice(&array)));
 // Ok("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n")
 ```
 
@@ -140,8 +165,8 @@ Decode redis reply buffers.
 let mut decoder = Decoder::new();
 let buf = Value::NullArray.encode();
 
-println!("{:?}", decoder.feed(&buf))  // Ok(())
-println!("{:?}", decoder.read())  // Some(Value::NullArray)
+println!("{:?}", decoder.feed(&buf));  // Ok(())
+println!("{:?}", decoder.read());  // Some(Value::NullArray)
 ```
 
 #### impl Decoder
@@ -158,23 +183,23 @@ let mut decoder = Decoder::with_buf_bulk();
 
 ##### `fn feed(&mut self, buf: &[u8]) -> Result<(), io:Error>`
 ```Rust
-println!("{:?}", decoder.feed(&buf))  // Ok(())
+println!("{:?}", decoder.feed(&buf));  // Ok(())
 ```
 
 ##### `fn read(&mut self) -> Option<Value>`
 ```Rust
-println!("{:?}", decoder.read())  // Some(Value::NullArray)
-println!("{:?}", decoder.read())  // None
+println!("{:?}", decoder.read());  // Some(Value::NullArray)
+println!("{:?}", decoder.read());  // None
 ```
 
 ##### `fn buffer_len(&self) -> usize`
 ```Rust
-println!("{:?}", decoder.buffer_len())  // 0
+println!("{:?}", decoder.buffer_len());  // 0
 ```
 
 ##### `fn result_len(&self) -> usize`
 ```Rust
-println!("{:?}", decoder.result_len())  // 0
+println!("{:?}", decoder.result_len());  // 0
 ```
 
 [version-image]: https://img.shields.io/crates/v/resp.svg
