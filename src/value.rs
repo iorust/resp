@@ -59,10 +59,10 @@ impl Value {
         match self {
             &Value::Null => format!("{}", "(Null)"),
             &Value::NullArray => format!("{}", "(Null Array)"),
-            &Value::String(ref string) => format!("\"{}\"", string),
+            &Value::String(ref string) => format!("{}", string),
             &Value::Error(ref error) => format!("(Error) {}", error),
             &Value::Integer(int) => format!("(Integer) {}", int.to_string()),
-            &Value::Bulk(ref string) => format!("{}", string),
+            &Value::Bulk(ref string) => format!("\"{}\"", string),
             &Value::BufBulk(ref buf) => {
                 if buf.len() == 0 {
                     return format!("{}", "(Empty Buffer)");
@@ -220,10 +220,10 @@ mod tests {
     fn enum_to_beautify_string() {
         assert_eq!(Value::Null.to_beautify_string(), "(Null)");
         assert_eq!(Value::NullArray.to_beautify_string(), "(Null Array)");
-        assert_eq!(Value::String("OK".to_string()).to_beautify_string(), "\"OK\"");
+        assert_eq!(Value::String("OK".to_string()).to_beautify_string(), "OK");
         assert_eq!(Value::Error("Err".to_string()).to_beautify_string(), "(Error) Err");
         assert_eq!(Value::Integer(123).to_beautify_string(), "(Integer) 123");
-        assert_eq!(Value::Bulk("Bulk String".to_string()).to_beautify_string(), "Bulk String");
+        assert_eq!(Value::Bulk("Bulk String".to_string()).to_beautify_string(), "\"Bulk String\"");
         assert_eq!(Value::BufBulk(vec![]).to_beautify_string(), "(Empty Buffer)");
         assert_eq!(Value::BufBulk(vec![0, 100]).to_beautify_string(), "(Buffer) 00 64");
         assert_eq!(Value::BufBulk(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
@@ -253,49 +253,49 @@ mod tests {
 
 let enum_fmt_result = " 1) (Null)
  2) (Null Array)
- 3) \"OK\"
+ 3) OK
  4) (Error) Err
  5) (Integer) 123
- 6) Bulk String
+ 6) \"Bulk String\"
  7) (Empty Array)
  8) (Buffer) 00 64
  9) 1) (Empty Array)
     2) (Integer) 123
-    3) Bulk String
+    3) \"Bulk String\"
 10) 1) (Null)
     2) (Null Array)
-    3) \"OK\"
+    3) OK
     4) (Error) Err
     5) (Integer) 123
-    6) Bulk String
+    6) \"Bulk String\"
     7) (Empty Array)
     8) (Buffer) 00 64
     9) 1) (Empty Array)
        2) (Integer) 123
-       3) Bulk String
+       3) \"Bulk String\"
 11) (Null)
 12) 1) (Null)
     2) (Null Array)
-    3) \"OK\"
+    3) OK
     4) (Error) Err
     5) (Integer) 123
-    6) Bulk String
+    6) \"Bulk String\"
     7) (Empty Array)
     8) (Buffer) 00 64
     9) 1) (Empty Array)
        2) (Integer) 123
-       3) Bulk String
+       3) \"Bulk String\"
    10) 1) (Null)
        2) (Null Array)
-       3) \"OK\"
+       3) OK
        4) (Error) Err
        5) (Integer) 123
-       6) Bulk String
+       6) \"Bulk String\"
        7) (Empty Array)
        8) (Buffer) 00 64
        9) 1) (Empty Array)
           2) (Integer) 123
-          3) Bulk String
+          3) \"Bulk String\"
    11) (Null)
 13) (Null)";
 

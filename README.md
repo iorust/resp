@@ -81,49 +81,49 @@ A test result:
 ```
  1) (Null)
  2) (Null Array)
- 3) \"OK\"
+ 3) OK
  4) (Error) Err
  5) (Integer) 123
- 6) Bulk String
+ 6) \"Bulk String\"
  7) (Empty Array)
  8) (Buffer) 00 64
  9) 1) (Empty Array)
     2) (Integer) 123
-    3) Bulk String
+    3) \"Bulk String\"
 10) 1) (Null)
     2) (Null Array)
-    3) \"OK\"
+    3) OK
     4) (Error) Err
     5) (Integer) 123
-    6) Bulk String
+    6) \"Bulk String\"
     7) (Empty Array)
     8) (Buffer) 00 64
     9) 1) (Empty Array)
        2) (Integer) 123
-       3) Bulk String
+       3) \"Bulk String\"
 11) (Null)
 12) 1) (Null)
     2) (Null Array)
-    3) \"OK\"
+    3) OK
     4) (Error) Err
     5) (Integer) 123
-    6) Bulk String
+    6) \"Bulk String\"
     7) (Empty Array)
     8) (Buffer) 00 64
     9) 1) (Empty Array)
        2) (Integer) 123
-       3) Bulk String
+       3) \"Bulk String\"
    10) 1) (Null)
        2) (Null Array)
-       3) \"OK\"
+       3) OK
        4) (Error) Err
        5) (Integer) 123
-       6) Bulk String
+       6) \"Bulk String\"
        7) (Empty Array)
        8) (Buffer) 00 64
        9) 1) (Empty Array)
           2) (Integer) 123
-          3) Bulk String
+          3) \"Bulk String\"
    11) (Null)
 13) (Null)
 ```

@@ -34,10 +34,10 @@ fn enum_to_encoded_string() {
 fn enum_to_beautify_string() {
     assert_eq!(Value::Null.to_beautify_string(), "(Null)");
     assert_eq!(Value::NullArray.to_beautify_string(), "(Null Array)");
-    assert_eq!(Value::String("OK".to_string()).to_beautify_string(), "\"OK\"");
+    assert_eq!(Value::String("OK".to_string()).to_beautify_string(), "OK");
     assert_eq!(Value::Error("Err".to_string()).to_beautify_string(), "(Error) Err");
     assert_eq!(Value::Integer(123).to_beautify_string(), "(Integer) 123");
-    assert_eq!(Value::Bulk("Bulk String".to_string()).to_beautify_string(), "Bulk String");
+    assert_eq!(Value::Bulk("Bulk String".to_string()).to_beautify_string(), "\"Bulk String\"");
     assert_eq!(Value::BufBulk(vec![]).to_beautify_string(), "(Empty Buffer)");
     assert_eq!(Value::BufBulk(vec![0, 100]).to_beautify_string(), "(Buffer) 00 64");
     assert_eq!(Value::BufBulk(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
