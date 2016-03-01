@@ -14,83 +14,71 @@ const NULL_BYTES: [u8; 5] = [36, 45, 49, 13, 10];
 const NULL_ARRAY_BYTES: [u8; 5] = [42, 45, 49, 13, 10];
 
 pub fn encode(value: &Value) -> Vec<u8> {
-    match value {
-        &Value::Null => {
-            let mut res: Vec<u8> = Vec::with_capacity(5);
-            res.extend_from_slice(&NULL_BYTES);
-            res
-        }
-
-        &Value::NullArray => {
-            let mut res: Vec<u8> = Vec::with_capacity(5);
-            res.extend_from_slice(&NULL_ARRAY_BYTES);
-            res
-        }
-
-        &Value::String(ref value) => {
-            let mut res: Vec<u8> = Vec::with_capacity(value.len() + 3);
-            res.push(43);
-            res.extend_from_slice(value.as_bytes());
-            res.extend_from_slice(&CLRF_BYTES);
-            res
-        }
-
-        &Value::Error(ref value) => {
-            let mut res: Vec<u8> = Vec::with_capacity(value.len() + 3);
-            res.push(45);
-            res.extend_from_slice(value.as_bytes());
-            res.extend_from_slice(&CLRF_BYTES);
-            res
-        }
-
-        &Value::Integer(ref value) => {
-            let value = value.to_string();
-            let mut res: Vec<u8> = Vec::with_capacity(value.len() + 3);
-            res.push(58);
-            res.extend_from_slice(value.as_bytes());
-            res.extend_from_slice(&CLRF_BYTES);
-            res
-        }
-
-        &Value::Bulk(ref value) => {
-            let len = value.len().to_string();
-            let mut res: Vec<u8> = Vec::with_capacity(len.len() + value.len() + 5);
-            res.push(36);
-            res.extend_from_slice(len.as_bytes());
-            res.extend_from_slice(&CLRF_BYTES);
-            res.extend_from_slice(value.as_bytes());
-            res.extend_from_slice(&CLRF_BYTES);
-            res
-        }
-
-        &Value::BufBulk(ref buffer) => {
-            let len = buffer.len().to_string();
-            let mut res: Vec<u8> = Vec::with_capacity(len.len() + buffer.len() + 5);
-            res.push(36);
-            res.extend_from_slice(len.as_bytes());
-            res.extend_from_slice(&CLRF_BYTES);
-            res.extend_from_slice(buffer);
-            res.extend_from_slice(&CLRF_BYTES);
-            res
-        }
-
-        &Value::Array(ref vec) => {
-            let len = vec.len().to_string();
-            let mut res: Vec<u8> = Vec::new();
-            res.push(42);
-            res.extend_from_slice(len.as_bytes());
-            res.extend_from_slice(&CLRF_BYTES);
-            let bytes: Vec<u8> = vec.iter().flat_map(|value| value.encode()).collect();
-            res.extend_from_slice(&bytes);
-            res.shrink_to_fit();
-            res
-        }
-    }
+    let mut res: Vec<u8> = Vec::new();
+    buf_encode(value, &mut res);
+    res
 }
 
 pub fn encode_slice(slice: &[&str]) -> Vec<u8> {
     let array: Vec<Value> = slice.iter().map(|string| Value::Bulk(string.to_string())).collect();
-    Value::Array(array).encode()
+    let mut res: Vec<u8> = Vec::new();
+    buf_encode(&Value::Array(array), &mut res);
+    res
+}
+
+fn buf_encode(value: &Value, buf: &mut Vec<u8>) {
+    match value {
+        &Value::Null => {
+            buf.extend_from_slice(&NULL_BYTES);
+        }
+
+        &Value::NullArray => {
+            buf.extend_from_slice(&NULL_ARRAY_BYTES);
+        }
+
+        &Value::String(ref value) => {
+            buf.push(43);
+            buf.extend_from_slice(value.as_bytes());
+            buf.extend_from_slice(&CLRF_BYTES);
+        }
+
+        &Value::Error(ref value) => {
+            buf.push(45);
+            buf.extend_from_slice(value.as_bytes());
+            buf.extend_from_slice(&CLRF_BYTES);
+        }
+
+        &Value::Integer(ref value) => {
+            buf.push(58);
+            buf.extend_from_slice(value.to_string().as_bytes());
+            buf.extend_from_slice(&CLRF_BYTES);
+        }
+
+        &Value::Bulk(ref value) => {
+            buf.push(36);
+            buf.extend_from_slice(value.len().to_string().as_bytes());
+            buf.extend_from_slice(&CLRF_BYTES);
+            buf.extend_from_slice(value.as_bytes());
+            buf.extend_from_slice(&CLRF_BYTES);
+        }
+
+        &Value::BufBulk(ref buffer) => {
+            buf.push(36);
+            buf.extend_from_slice(buffer.len().to_string().as_bytes());
+            buf.extend_from_slice(&CLRF_BYTES);
+            buf.extend_from_slice(buffer);
+            buf.extend_from_slice(&CLRF_BYTES);
+        }
+
+        &Value::Array(ref vec) => {
+            buf.push(42);
+            buf.extend_from_slice(vec.len().to_string().as_bytes());
+            buf.extend_from_slice(&CLRF_BYTES);
+            for value in vec.iter() {
+                buf_encode(value, buf);
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
