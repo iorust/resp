@@ -59,24 +59,24 @@ impl Value {
         match self {
             &Value::Null => format!("{}", "(Null)"),
             &Value::NullArray => format!("{}", "(Null Array)"),
-            &Value::String(ref string) => format!("{}", string),
-            &Value::Error(ref error) => format!("(Error) {}", error),
-            &Value::Integer(int) => format!("(Integer) {}", int.to_string()),
-            &Value::Bulk(ref string) => format!("\"{}\"", string),
-            &Value::BufBulk(ref buf) => {
-                if buf.len() == 0 {
+            &Value::String(ref val) => format!("{}", val),
+            &Value::Error(ref val) => format!("(Error) {}", val),
+            &Value::Integer(ref val) => format!("(Integer) {}", val.to_string()),
+            &Value::Bulk(ref val) => format!("\"{}\"", val),
+            &Value::BufBulk(ref val) => {
+                if val.len() == 0 {
                     return format!("{}", "(Empty Buffer)");
                 }
                 let mut string = String::with_capacity(52);
-                for u in buf.iter().take(16) {
+                for u in val.iter().take(16) {
                     string.push_str(&format_to_hex_str(*u));
                 }
-                if buf.len() > 16 {
+                if val.len() > 16 {
                     string.push_str(" ...");
                 }
                 format!("(Buffer) {}", &string[1..])
             }
-            &Value::Array(ref array) => format!("{}", format_array_to_str(array, 0)),
+            &Value::Array(ref val) => format!("{}", format_array_to_str(val, 0)),
         }
     }
 }

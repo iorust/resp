@@ -36,46 +36,46 @@ fn buf_encode(value: &Value, buf: &mut Vec<u8>) {
             buf.extend_from_slice(&NULL_ARRAY_BYTES);
         }
 
-        &Value::String(ref value) => {
+        &Value::String(ref val) => {
             buf.push(43);
-            buf.extend_from_slice(value.as_bytes());
+            buf.extend_from_slice(val.as_bytes());
             buf.extend_from_slice(&CLRF_BYTES);
         }
 
-        &Value::Error(ref value) => {
+        &Value::Error(ref val) => {
             buf.push(45);
-            buf.extend_from_slice(value.as_bytes());
+            buf.extend_from_slice(val.as_bytes());
             buf.extend_from_slice(&CLRF_BYTES);
         }
 
-        &Value::Integer(ref value) => {
+        &Value::Integer(ref val) => {
             buf.push(58);
-            buf.extend_from_slice(value.to_string().as_bytes());
+            buf.extend_from_slice(val.to_string().as_bytes());
             buf.extend_from_slice(&CLRF_BYTES);
         }
 
-        &Value::Bulk(ref value) => {
+        &Value::Bulk(ref val) => {
             buf.push(36);
-            buf.extend_from_slice(value.len().to_string().as_bytes());
+            buf.extend_from_slice(val.len().to_string().as_bytes());
             buf.extend_from_slice(&CLRF_BYTES);
-            buf.extend_from_slice(value.as_bytes());
+            buf.extend_from_slice(val.as_bytes());
             buf.extend_from_slice(&CLRF_BYTES);
         }
 
-        &Value::BufBulk(ref buffer) => {
+        &Value::BufBulk(ref val) => {
             buf.push(36);
-            buf.extend_from_slice(buffer.len().to_string().as_bytes());
+            buf.extend_from_slice(val.len().to_string().as_bytes());
             buf.extend_from_slice(&CLRF_BYTES);
-            buf.extend_from_slice(buffer);
+            buf.extend_from_slice(val);
             buf.extend_from_slice(&CLRF_BYTES);
         }
 
-        &Value::Array(ref vec) => {
+        &Value::Array(ref val) => {
             buf.push(42);
-            buf.extend_from_slice(vec.len().to_string().as_bytes());
+            buf.extend_from_slice(val.len().to_string().as_bytes());
             buf.extend_from_slice(&CLRF_BYTES);
-            for value in vec.iter() {
-                buf_encode(value, buf);
+            for item in val {
+                buf_encode(item, buf);
             }
         }
     }
@@ -545,8 +545,8 @@ mod tests {
         let mut read_values: Vec<Value> = Vec::new();
 
         // feed byte by byte~
-        for byte in buf.iter() {
-            let byte = vec![*byte];
+        for byte in buf {
+            let byte = vec![byte];
             assert_eq!(decoder.feed(&byte).unwrap(), ());
             if decoder.result_len() > 0 {
                 // one value should be parsed.
