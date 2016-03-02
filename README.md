@@ -12,6 +12,7 @@ Implementations:
 - [redis-cli](https://github.com/iorust/redis-cli) redis CLI.
 
 ## API
+### Documentation https://iorust.github.io/resp/resp
 
 ```Rust
 extern crate resp;
@@ -58,8 +59,6 @@ enum Value {
 #### `decoder.read() -> Option<Value>`
 #### `decoder.buffer_len() -> usize`
 #### `decoder.result_len() -> usize`
-
-## Documentation https://iorust.github.io/resp/resp
 
 
 [version-image]: https://img.shields.io/crates/v/resp.svg
