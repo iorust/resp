@@ -5,31 +5,36 @@ use std::string::String;
 use std::io::{Result, Error, ErrorKind};
 use super::serialize::{encode};
 
-/// Represents a RESP value
-/// http://redis.io/topics/protocol
-
+/// Represents a RESP value, see [Redis Protocol specification](http://redis.io/topics/protocol).
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Value {
-    /// Null bulk reply, $-1\r\n
+    /// Null bulk reply, `$-1\r\n`
     Null,
-    /// Null array reply, *-1\r\n
+    /// Null array reply, `*-1\r\n`
     NullArray,
-    /// For Simple Strings the first byte of the reply is "+"[43]
+    /// For Simple Strings the first byte of the reply is "+".
     String(String),
-    /// For Errors the first byte of the reply is "-"[45]
+    /// For Errors the first byte of the reply is "-".
     Error(String),
-    /// For Integers the first byte of the reply is ":"[58]
+    /// For Integers the first byte of the reply is ":".
     Integer(i64),
-    /// For Bulk Strings the first byte of the reply is "$"[36]
+    /// For Bulk Strings the first byte of the reply is "$".
     Bulk(String),
-    /// For Bulk <binary> Strings the first byte of the reply is "$"[36]
+    /// For Bulk <binary> Strings the first byte of the reply is "$".
     BufBulk(Vec<u8>),
-    /// For Arrays the first byte of the reply is "*"[42]
+    /// For Arrays the first byte of the reply is "*".
     Array(Vec<Value>),
 }
 
 impl Value {
-    /// Returns true if the `Value` is a Null. Returns false otherwise.
+    /// Returns `true` if the value is a `Null` or `NullArray`. Returns `false` otherwise.
+    /// # Examples
+    /// ```
+    /// # use self::resp::{Value};
+    /// assert_eq!(Value::Null.is_null(), true);
+    /// assert_eq!(Value::NullArray.is_null(), true);
+    /// assert_eq!(Value::Integer(123).is_null(), false);
+    /// ```
     pub fn is_null(&self) -> bool {
         match self {
             &Value::Null => true,
@@ -38,7 +43,13 @@ impl Value {
         }
     }
 
-    /// Returns true if the `Value` is a Error. Returns false otherwise.
+    /// Returns `true` if the value is a `Error`. Returns `false` otherwise.
+    /// # Examples
+    /// ```
+    /// # use self::resp::{Value};
+    /// assert_eq!(Value::Null.is_error(), false);
+    /// assert_eq!(Value::Error("".to_string()).is_error(), true);
+    /// ```
     pub fn is_error(&self) -> bool {
         match self {
             &Value::Error(_) => true,
@@ -46,15 +57,95 @@ impl Value {
         }
     }
 
+    /// Encode the value to RESP binary buffer.
+    /// # Examples
+    /// ```
+    /// # use self::resp::{Value};
+    /// let val = Value::String("OK正".to_string());
+    /// assert_eq!(val.encode(), vec![43, 79, 75, 230, 173, 163, 13, 10]);
+    /// ```
     pub fn encode(&self) -> Vec<u8> {
         encode(self)
     }
 
+    /// Encode the value to RESP string.
+    /// # Examples
+    /// ```
+    /// # use self::resp::{Value};
+    /// let val = Value::String("OK正".to_string());
+    /// assert_eq!(val.to_encoded_string().unwrap(), "+OK正\r\n");
+    /// ```
     pub fn to_encoded_string(&self) -> Result<String> {
         let bytes = self.encode();
         String::from_utf8(bytes).map_err(|err| Error::new(ErrorKind::InvalidData, err))
     }
 
+    /// Encode the value to beautify formated string.
+    /// # Examples
+    /// ```
+    /// # use self::resp::{Value};
+    /// assert_eq!(Value::Null.to_beautify_string(), "(Null)");
+    /// assert_eq!(Value::NullArray.to_beautify_string(), "(Null Array)");
+    /// assert_eq!(Value::String("OK".to_string()).to_beautify_string(), "OK");
+    /// assert_eq!(Value::Error("Err".to_string()).to_beautify_string(), "(Error) Err");
+    /// assert_eq!(Value::Integer(123).to_beautify_string(), "(Integer) 123");
+    /// assert_eq!(Value::Bulk("Bulk String".to_string()).to_beautify_string(), "\"Bulk String\"");
+    /// assert_eq!(Value::BufBulk(vec![]).to_beautify_string(), "(Empty Buffer)");
+    /// assert_eq!(Value::BufBulk(vec![0, 100]).to_beautify_string(), "(Buffer) 00 64");
+    /// assert_eq!(Value::Array(vec![]).to_beautify_string(), "(Empty Array)");
+    /// ```
+    ///
+    /// A full formated example:
+    ///
+    /// ```bash
+    ///  1) (Null)
+    ///  2) (Null Array)
+    ///  3) OK
+    ///  4) (Error) Err
+    ///  5) (Integer) 123
+    ///  6) \"Bulk String\"
+    ///  7) (Empty Array)
+    ///  8) (Buffer) 00 64
+    ///  9) 1) (Empty Array)
+    ///     2) (Integer) 123
+    ///     3) \"Bulk String\"
+    /// 10) 1) (Null)
+    ///     2) (Null Array)
+    ///     3) OK
+    ///     4) (Error) Err
+    ///     5) (Integer) 123
+    ///     6) \"Bulk String\"
+    ///     7) (Empty Array)
+    ///     8) (Buffer) 00 64
+    ///     9) 1) (Empty Array)
+    ///        2) (Integer) 123
+    ///        3) \"Bulk String\"
+    /// 11) (Null)
+    /// 12) 1) (Null)
+    ///     2) (Null Array)
+    ///     3) OK
+    ///     4) (Error) Err
+    ///     5) (Integer) 123
+    ///     6) \"Bulk String\"
+    ///     7) (Empty Array)
+    ///     8) (Buffer) 00 64
+    ///     9) 1) (Empty Array)
+    ///        2) (Integer) 123
+    ///        3) \"Bulk String\"
+    ///    10) 1) (Null)
+    ///        2) (Null Array)
+    ///        3) OK
+    ///        4) (Error) Err
+    ///        5) (Integer) 123
+    ///        6) \"Bulk String\"
+    ///        7) (Empty Array)
+    ///        8) (Buffer) 00 64
+    ///        9) 1) (Empty Array)
+    ///           2) (Integer) 123
+    ///           3) \"Bulk String\"
+    ///    11) (Null)
+    /// 13) (Null)
+    /// ```
     pub fn to_beautify_string(&self) -> String {
         match self {
             &Value::Null => format!("{}", "(Null)"),

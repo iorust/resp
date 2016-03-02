@@ -1,4 +1,4 @@
-//! RESP Value
+//! RESP serialize
 
 use std::str;
 use std::vec::Vec;
@@ -13,12 +13,26 @@ const CLRF_BYTES: [u8; 2] = [13, 10];
 const NULL_BYTES: [u8; 5] = [36, 45, 49, 13, 10];
 const NULL_ARRAY_BYTES: [u8; 5] = [42, 45, 49, 13, 10];
 
+/// Encode the value to RESP binary buffer.
+/// # Examples
+/// ```
+/// # use self::resp::{Value, encode};
+/// let val = Value::String("OK正".to_string());
+/// assert_eq!(encode(&val), vec![43, 79, 75, 230, 173, 163, 13, 10]);
+/// ```
 pub fn encode(value: &Value) -> Vec<u8> {
     let mut res: Vec<u8> = Vec::new();
     buf_encode(value, &mut res);
     res
 }
 
+/// Encode a array of slice string to RESP binary buffer. It is usefull for redis client to encode request command.
+/// # Examples
+/// ```
+/// # use self::resp::{Value, encode_slice};
+/// let array = ["SET", "a", "1"];
+/// assert_eq!(encode_slice(&array), "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n".to_string().into_bytes());
+/// ```
 pub fn encode_slice(slice: &[&str]) -> Vec<u8> {
     let array: Vec<Value> = slice.iter().map(|string| Value::Bulk(string.to_string())).collect();
     let mut res: Vec<u8> = Vec::new();
@@ -81,6 +95,7 @@ fn buf_encode(value: &Value, buf: &mut Vec<u8>) {
     }
 }
 
+/// A streaming RESP decoder.
 #[derive(Debug)]
 pub struct Decoder {
     buf_bulk: bool,
@@ -89,6 +104,24 @@ pub struct Decoder {
 }
 
 impl Decoder {
+    /// Creates a new decoder instance for decoding the RESP buffers.
+    /// # Examples
+    /// ```
+    /// # use self::resp::{Decoder, Value};
+    /// let mut decoder = Decoder::new();
+    ///
+    /// let value = Value::Bulk("Hello".to_string());
+    /// assert_eq!(decoder.feed(&value.encode()).unwrap(), ());
+    /// assert_eq!(decoder.read().unwrap(), value);
+    /// assert_eq!(decoder.read(), None);
+
+    /// let value = Value::BufBulk("Hello".to_string().into_bytes());
+    /// assert_eq!(decoder.feed(&value.encode()).unwrap(), ());
+    ///
+    /// // Always decode "$" buffers to Value::Bulk even if feed Value::BufBulk buffers
+    /// assert_eq!(decoder.read().unwrap(), Value::Bulk("Hello".to_string()));
+    /// assert_eq!(decoder.read(), None);
+    /// ```
     pub fn new() -> Self {
         Decoder {
             buf_bulk: false,
@@ -97,6 +130,24 @@ impl Decoder {
         }
     }
 
+    /// Creates a new decoder instance for decoding the RESP buffers. The instance will decode bulk value to buffer bulk.
+    /// # Examples
+    /// ```
+    /// # use self::resp::{Decoder, Value};
+    /// let mut decoder = Decoder::with_buf_bulk();
+    ///
+    /// let value = Value::Bulk("Hello".to_string());
+    /// assert_eq!(decoder.feed(&value.encode()).unwrap(), ());
+    ///
+    /// // Always decode "$" buffers to Value::BufBulk even if feed Value::Bulk buffers
+    /// assert_eq!(decoder.read().unwrap(), Value::BufBulk("Hello".to_string().into_bytes()));
+    /// assert_eq!(decoder.read(), None);
+
+    /// let value = Value::BufBulk("Hello".to_string().into_bytes());
+    /// assert_eq!(decoder.feed(&value.encode()).unwrap(), ());
+    /// assert_eq!(decoder.read().unwrap(), value);
+    /// assert_eq!(decoder.read(), None);
+    /// ```
     pub fn with_buf_bulk() -> Self {
         Decoder {
             buf_bulk: true,
@@ -105,11 +156,35 @@ impl Decoder {
         }
     }
 
+    /// Feeds buffers to decoder. The buffer may contain one more values, or be a part of value.
+    /// You can feed buffer at all times.
+    /// # Examples
+    /// ```
+    /// # use self::resp::{Decoder, Value};
+    /// let mut decoder = Decoder::new();
+    /// assert_eq!(decoder.buffer_len(), 0);
+    ///
+    /// let value = Value::Bulk("Test".to_string());
+    /// let buf = value.encode();
+    /// assert_eq!(decoder.feed(&buf[0..4]).unwrap(), ());
+    /// assert_eq!(decoder.read(), None);
+    /// assert_eq!(decoder.buffer_len(), 4);
+    /// assert_eq!(decoder.result_len(), 0);
+    ///
+    /// assert_eq!(decoder.feed(&buf[4..]).unwrap(), ());
+    /// assert_eq!(decoder.buffer_len(), 0);
+    /// assert_eq!(decoder.result_len(), 1);
+    /// assert_eq!(decoder.read().unwrap(), value);
+    /// assert_eq!(decoder.read(), None);
+    /// assert_eq!(decoder.buffer_len(), 0);
+    /// assert_eq!(decoder.result_len(), 0);
+    /// ```
     pub fn feed(&mut self, buf: &[u8]) -> Result<()> {
         self.buf.extend(buf);
         self.parse()
     }
 
+    /// Reads a decoded value, will return `None` if no value decoded.
     pub fn read(&mut self) -> Option<Value> {
         if self.res.len() == 0 {
             return None;
@@ -117,10 +192,12 @@ impl Decoder {
         Some(self.res.remove(0))
     }
 
+    /// Returns the buffer's length that wait for decoding. It usually is `0`. Non-zero means that decoder need more buffer.
     pub fn buffer_len(&self) -> usize {
         self.buf.len()
     }
 
+    /// Returns decoded values count. The decoded values will be hold by decoder, until you read them.
     pub fn result_len(&self) -> usize {
         self.res.len()
     }
@@ -304,7 +381,6 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
                             Err(_) => Some(ParseResult::Err(ErrorMessage::ParseBulk)),
                         }
                     }
-
                     Err(_) => Some(ParseResult::Err(ErrorMessage::ParseBulk)),
                 }
             } else {

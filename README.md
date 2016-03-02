@@ -18,7 +18,7 @@ extern crate resp;
 use resp::{Value, encode, encode_slice, Decoder};
 ```
 
-### Value
+### RESP Values
 
 ```Rust
 enum Value {
@@ -40,167 +40,27 @@ enum Value {
     Array(Vec<Value>),
 }
 ```
-RESP values.
 
-#### Examples
-```Rust
-let error = Value::Error("error!".to_string());
-let null = Value::Null;
-```
-
-#### impl Value
-
-##### `fn is_null(&self) -> bool`
-```Rust
-println!("{:?}", Value::Null.is_null());  // true
-println!("{:?}", Value::NullArray.is_null());  // true
-println!("{:?}", Value::Integer(123).is_null());  // false
-```
-
-##### `fn is_error(&self) -> bool`
-```Rust
-println!("{:?}", Value::Null.is_error());  // false
-println!("{:?}", Value::NullArray.is_error());  // false
-println!("{:?}", Value::Error("".to_string()).is_error());  // true
-```
-
-##### `fn encode(&self) -> Vec<u8>`
-```Rust
-let val = Value::String("OK正".to_string());
-println!("{:?}", val.encode());  // [43, 79, 75, 230, 173, 163, 13, 10]
-```
-
-##### `fn to_encoded_string(&self) -> io::Result<String>`
-```Rust
-let val = Value::String("OK正".to_string());
-println!("{:?}", val.to_encoded_string().unwrap());  // "+OK正\r\n"
-```
-
-##### `fn to_beautify_string(&self) -> String`
-A test result:
-```
- 1) (Null)
- 2) (Null Array)
- 3) OK
- 4) (Error) Err
- 5) (Integer) 123
- 6) \"Bulk String\"
- 7) (Empty Array)
- 8) (Buffer) 00 64
- 9) 1) (Empty Array)
-    2) (Integer) 123
-    3) \"Bulk String\"
-10) 1) (Null)
-    2) (Null Array)
-    3) OK
-    4) (Error) Err
-    5) (Integer) 123
-    6) \"Bulk String\"
-    7) (Empty Array)
-    8) (Buffer) 00 64
-    9) 1) (Empty Array)
-       2) (Integer) 123
-       3) \"Bulk String\"
-11) (Null)
-12) 1) (Null)
-    2) (Null Array)
-    3) OK
-    4) (Error) Err
-    5) (Integer) 123
-    6) \"Bulk String\"
-    7) (Empty Array)
-    8) (Buffer) 00 64
-    9) 1) (Empty Array)
-       2) (Integer) 123
-       3) \"Bulk String\"
-   10) 1) (Null)
-       2) (Null Array)
-       3) OK
-       4) (Error) Err
-       5) (Integer) 123
-       6) \"Bulk String\"
-       7) (Empty Array)
-       8) (Buffer) 00 64
-       9) 1) (Empty Array)
-          2) (Integer) 123
-          3) \"Bulk String\"
-   11) (Null)
-13) (Null)
-```
+#### `value.is_null() -> bool`
+#### `value.is_error() -> bool`
+#### `value.encode() -> Vec<u8>`
+#### `value.to_encoded_string() -> io::Result<String>`
+#### `value.to_beautify_string() -> String`
 
 ### encode
-
-Encode a RESP value to buffer.
-
-##### `fn encode(value: &Value) -> Vec<u8>`
-
-```Rust
-let val = Value::String("OK正".to_string());
-println!("{:?}", encode(&val));  // [43, 79, 75, 230, 173, 163, 13, 10]
-```
-
-### encode_slice
-
-Encode a slice of string to RESP request buffer. It is usefull for redis client to encode request command.
-
-##### `fn encode_slice(array: &[&str]) -> Vec<u8>`
-
-```Rust
-let array = ["SET", "a", "1"];
-println!("{:?}", String::from_utf8(encode_slice(&array)));
-// Ok("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n")
-```
+#### `fn encode(value: &Value) -> Vec<u8>`
+#### `fn encode_slice(array: &[&str]) -> Vec<u8>`
 
 ### Decoder
+#### `Decoder.new() -> Self`
+#### `Decoder.with_buf_bulk() -> Self`
+#### `decoder.feed(buf: &[u8]) -> Result<(), io:Error>`
+#### `decoder.read() -> Option<Value>`
+#### `decoder.buffer_len() -> usize`
+#### `decoder.result_len() -> usize`
 
-```Rust
-struct Decoder {
-    // some fields omitted
-}
-```
-Decode redis reply buffers.
+## Documentation https://iorust.github.io/resp/resp
 
-#### Examples
-```Rust
-let mut decoder = Decoder::new();
-let buf = Value::NullArray.encode();
-
-println!("{:?}", decoder.feed(&buf));  // Ok(())
-println!("{:?}", decoder.read());  // Some(Value::NullArray)
-```
-
-#### impl Decoder
-
-##### `fn new() -> Self`
-```Rust
-let mut decoder = Decoder::new();
-```
-
-##### `fn with_buf_bulk() -> Self`
-```Rust
-let mut decoder = Decoder::with_buf_bulk();
-```
-
-##### `fn feed(&mut self, buf: &[u8]) -> Result<(), io:Error>`
-```Rust
-println!("{:?}", decoder.feed(&buf));  // Ok(())
-```
-
-##### `fn read(&mut self) -> Option<Value>`
-```Rust
-println!("{:?}", decoder.read());  // Some(Value::NullArray)
-println!("{:?}", decoder.read());  // None
-```
-
-##### `fn buffer_len(&self) -> usize`
-```Rust
-println!("{:?}", decoder.buffer_len());  // 0
-```
-
-##### `fn result_len(&self) -> usize`
-```Rust
-println!("{:?}", decoder.result_len());  // 0
-```
 
 [version-image]: https://img.shields.io/crates/v/resp.svg
 [version-url]: https://crates.io/crates/resp
