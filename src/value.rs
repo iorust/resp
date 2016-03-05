@@ -158,9 +158,9 @@ impl Value {
                 if val.len() == 0 {
                     return format!("{}", "(Empty Buffer)");
                 }
-                let mut string = String::with_capacity(52);
+                let mut string = String::new();
                 for u in val.iter().take(16) {
-                    string.push_str(&format_to_hex_str(*u));
+                    string.push_str(&format_to_hex_str(u));
                 }
                 if val.len() > 16 {
                     string.push_str(" ...");
@@ -172,8 +172,8 @@ impl Value {
     }
 }
 
-fn format_to_hex_str(u: u8) -> String {
-    if u >= 16 {
+fn format_to_hex_str(u: &u8) -> String {
+    if u >= &16 {
         format!(" {:x}", u)
     } else {
         format!(" 0{:x}", u)

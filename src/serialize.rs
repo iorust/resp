@@ -9,9 +9,9 @@ use super::Value;
 
 /// up to 512 MB in length
 const RESP_MAX: i64 = 512 * 1024 * 1024;
-const CLRF_BYTES: [u8; 2] = [13, 10];
-const NULL_BYTES: [u8; 5] = [36, 45, 49, 13, 10];
-const NULL_ARRAY_BYTES: [u8; 5] = [42, 45, 49, 13, 10];
+const CLRF_BYTES: &'static [u8; 2] = b"\r\n";
+const NULL_BYTES: &'static [u8; 5] = b"$-1\r\n";
+const NULL_ARRAY_BYTES: &'static [u8; 5] = b"*-1\r\n";
 
 /// Encode the value to RESP binary buffer.
 /// # Examples
@@ -43,51 +43,51 @@ pub fn encode_slice(slice: &[&str]) -> Vec<u8> {
 fn buf_encode(value: &Value, buf: &mut Vec<u8>) {
     match value {
         &Value::Null => {
-            buf.extend_from_slice(&NULL_BYTES);
+            buf.extend_from_slice(NULL_BYTES);
         }
 
         &Value::NullArray => {
-            buf.extend_from_slice(&NULL_ARRAY_BYTES);
+            buf.extend_from_slice(NULL_ARRAY_BYTES);
         }
 
         &Value::String(ref val) => {
-            buf.push(43);
+            buf.push(b'+');
             buf.extend_from_slice(val.as_bytes());
-            buf.extend_from_slice(&CLRF_BYTES);
+            buf.extend_from_slice(CLRF_BYTES);
         }
 
         &Value::Error(ref val) => {
-            buf.push(45);
+            buf.push(b'-');
             buf.extend_from_slice(val.as_bytes());
-            buf.extend_from_slice(&CLRF_BYTES);
+            buf.extend_from_slice(CLRF_BYTES);
         }
 
         &Value::Integer(ref val) => {
-            buf.push(58);
+            buf.push(b':');
             buf.extend_from_slice(val.to_string().as_bytes());
-            buf.extend_from_slice(&CLRF_BYTES);
+            buf.extend_from_slice(CLRF_BYTES);
         }
 
         &Value::Bulk(ref val) => {
-            buf.push(36);
+            buf.push(b'$');
             buf.extend_from_slice(val.len().to_string().as_bytes());
-            buf.extend_from_slice(&CLRF_BYTES);
+            buf.extend_from_slice(CLRF_BYTES);
             buf.extend_from_slice(val.as_bytes());
-            buf.extend_from_slice(&CLRF_BYTES);
+            buf.extend_from_slice(CLRF_BYTES);
         }
 
         &Value::BufBulk(ref val) => {
-            buf.push(36);
+            buf.push(b'$');
             buf.extend_from_slice(val.len().to_string().as_bytes());
-            buf.extend_from_slice(&CLRF_BYTES);
+            buf.extend_from_slice(CLRF_BYTES);
             buf.extend_from_slice(val);
-            buf.extend_from_slice(&CLRF_BYTES);
+            buf.extend_from_slice(CLRF_BYTES);
         }
 
         &Value::Array(ref val) => {
-            buf.push(42);
+            buf.push(b'*');
             buf.extend_from_slice(val.len().to_string().as_bytes());
-            buf.extend_from_slice(&CLRF_BYTES);
+            buf.extend_from_slice(CLRF_BYTES);
             for item in val {
                 buf_encode(item, buf);
             }
@@ -247,7 +247,7 @@ fn parse_integer(bytes: &[u8]) -> Result<i64> {
 }
 
 fn is_crlf(a: u8, b: u8) -> bool {
-    a == 13 && b == 10
+    a == b'\r' && b == b'\n'
 }
 
 fn read_crlf(buffer: &[u8], start: usize) -> Option<usize> {
@@ -299,8 +299,8 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
     let identifier = buffer[offset];
     let mut offset = offset + 1;
     match identifier {
-        /// Value::String
-        43 => {
+        // Value::String
+        b'+' => {
             if let Some(pos) = read_crlf(buffer, offset) {
                 let bytes = buffer[offset..pos].as_ref();
                 offset = pos + 2;
@@ -313,8 +313,8 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
             }
         }
 
-        /// Value::Error
-        45 => {
+        // Value::Error
+        b'-' => {
             if let Some(pos) = read_crlf(buffer, offset) {
                 let bytes = buffer[offset..pos].as_ref();
                 offset = pos + 2;
@@ -327,8 +327,8 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
             }
         }
 
-        /// Value::Integer
-        58 => {
+        // Value::Integer
+        b':' => {
             if let Some(pos) = read_crlf(buffer, offset) {
                 let bytes = buffer[offset..pos].as_ref();
                 offset = pos + 2;
@@ -341,8 +341,8 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
             }
         }
 
-        /// Value::Bulk
-        36 => {
+        // Value::Bulk
+        b'$' => {
             if let Some(pos) = read_crlf(buffer, offset) {
                 let bytes = buffer[offset..pos].as_ref();
                 offset = pos + 2;
@@ -388,8 +388,8 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
             }
         }
 
-        /// Value::Array
-        42 => {
+        // Value::Array
+        b'*' => {
             if let Some(pos) = read_crlf(buffer, offset) {
                 let bytes = buffer[offset..pos].as_ref();
                 offset = pos + 2;
