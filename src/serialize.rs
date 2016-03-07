@@ -8,10 +8,10 @@ use std::io::{Result, Error, ErrorKind};
 use super::Value;
 
 /// up to 512 MB in length
-const RESP_MAX: i64 = 512 * 1024 * 1024;
-const CLRF_BYTES: &'static [u8; 2] = b"\r\n";
-const NULL_BYTES: &'static [u8; 5] = b"$-1\r\n";
-const NULL_ARRAY_BYTES: &'static [u8; 5] = b"*-1\r\n";
+const RESP_MAX_SIZE: i64 = 512 * 1024 * 1024;
+const CLRF_BYTES: &'static [u8] = b"\r\n";
+const NULL_BYTES: &'static [u8] = b"$-1\r\n";
+const NULL_ARRAY_BYTES: &'static [u8] = b"*-1\r\n";
 
 /// Encode the value to RESP binary buffer.
 /// # Examples
@@ -353,7 +353,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
                             return Some(ParseResult::Res(Value::Null, offset));
                         }
 
-                        if int < -1 || int >= RESP_MAX {
+                        if int < -1 || int >= RESP_MAX_SIZE {
                             return Some(ParseResult::Err(ErrorMessage::ParseBulk));
                         }
 
@@ -400,7 +400,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
                             return Some(ParseResult::Res(Value::NullArray, offset));
                         }
 
-                        if int < -1 || int >= RESP_MAX {
+                        if int < -1 || int >= RESP_MAX_SIZE {
                             return Some(ParseResult::Err(ErrorMessage::ParseArray));
                         }
 
