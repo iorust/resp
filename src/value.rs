@@ -36,9 +36,9 @@ impl Value {
     /// assert_eq!(Value::Integer(123).is_null(), false);
     /// ```
     pub fn is_null(&self) -> bool {
-        match self {
-            &Value::Null => true,
-            &Value::NullArray => true,
+        match *self {
+            Value::Null => true,
+            Value::NullArray => true,
             _ => false
         }
     }
@@ -51,8 +51,8 @@ impl Value {
     /// assert_eq!(Value::Error("".to_string()).is_error(), true);
     /// ```
     pub fn is_error(&self) -> bool {
-        match self {
-            &Value::Error(_) => true,
+        match *self {
+            Value::Error(_) => true,
             _ => false
         }
     }
@@ -147,14 +147,14 @@ impl Value {
     /// 13) (Null)
     /// ```
     pub fn to_beautify_string(&self) -> String {
-        match self {
-            &Value::Null => format!("{}", "(Null)"),
-            &Value::NullArray => format!("{}", "(Null Array)"),
-            &Value::String(ref val) => format!("{}", val),
-            &Value::Error(ref val) => format!("(Error) {}", val),
-            &Value::Integer(ref val) => format!("(Integer) {}", val.to_string()),
-            &Value::Bulk(ref val) => format!("\"{}\"", val),
-            &Value::BufBulk(ref val) => {
+        match *self {
+            Value::Null => format!("{}", "(Null)"),
+            Value::NullArray => format!("{}", "(Null Array)"),
+            Value::String(ref val) => format!("{}", val),
+            Value::Error(ref val) => format!("(Error) {}", val),
+            Value::Integer(ref val) => format!("(Integer) {}", val.to_string()),
+            Value::Bulk(ref val) => format!("\"{}\"", val),
+            Value::BufBulk(ref val) => {
                 if val.len() == 0 {
                     return format!("{}", "(Empty Buffer)");
                 }
@@ -166,8 +166,8 @@ impl Value {
                     string.push_str(" ...");
                 }
                 format!("(Buffer) {}", &string[1..])
-            }
-            &Value::Array(ref val) => format!("{}", format_array_to_str(val, 0)),
+            },
+            Value::Array(ref val) => format!("{}", format_array_to_str(val, 0)),
         }
     }
 }
