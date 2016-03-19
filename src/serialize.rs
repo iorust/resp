@@ -41,57 +41,50 @@ pub fn encode_slice(slice: &[&str]) -> Vec<u8> {
 }
 
 fn buf_encode(value: &Value, buf: &mut Vec<u8>) {
-    match value {
-        &Value::Null => {
+    match *value {
+        Value::Null => {
             buf.extend_from_slice(NULL_BYTES);
-        }
-
-        &Value::NullArray => {
+        },
+        Value::NullArray => {
             buf.extend_from_slice(NULL_ARRAY_BYTES);
-        }
-
-        &Value::String(ref val) => {
+        },
+        Value::String(ref val) => {
             buf.push(b'+');
             buf.extend_from_slice(val.as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
-        }
-
-        &Value::Error(ref val) => {
+        },
+        Value::Error(ref val) => {
             buf.push(b'-');
             buf.extend_from_slice(val.as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
-        }
-
-        &Value::Integer(ref val) => {
+        },
+        Value::Integer(ref val) => {
             buf.push(b':');
             buf.extend_from_slice(val.to_string().as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
-        }
-
-        &Value::Bulk(ref val) => {
+        },
+        Value::Bulk(ref val) => {
             buf.push(b'$');
             buf.extend_from_slice(val.len().to_string().as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
             buf.extend_from_slice(val.as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
-        }
-
-        &Value::BufBulk(ref val) => {
+        },
+        Value::BufBulk(ref val) => {
             buf.push(b'$');
             buf.extend_from_slice(val.len().to_string().as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
             buf.extend_from_slice(val);
             buf.extend_from_slice(CLRF_BYTES);
-        }
-
-        &Value::Array(ref val) => {
+        },
+        Value::Array(ref val) => {
             buf.push(b'*');
             buf.extend_from_slice(val.len().to_string().as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
             for item in val {
                 buf_encode(item, buf);
             }
-        }
+        },
     }
 }
 
@@ -99,6 +92,7 @@ fn buf_encode(value: &Value, buf: &mut Vec<u8>) {
 #[derive(Debug)]
 pub struct Decoder {
     buf_bulk: bool,
+    pos: usize,
     buf: Vec<u8>,
     res: Vec<Value>,
 }
@@ -125,6 +119,7 @@ impl Decoder {
     pub fn new() -> Self {
         Decoder {
             buf_bulk: false,
+            pos: 0,
             buf: Vec::new(),
             res: Vec::with_capacity(8),
         }
@@ -151,6 +146,7 @@ impl Decoder {
     pub fn with_buf_bulk() -> Self {
         Decoder {
             buf_bulk: true,
+            pos: 0,
             buf: Vec::new(),
             res: Vec::with_capacity(8),
         }
@@ -202,30 +198,27 @@ impl Decoder {
         self.res.len()
     }
 
-    fn prune_buf(&mut self, pos: usize) {
-        if pos == 0 || pos >= self.buf.len() {
+    fn prune_buf(&mut self) {
+        if self.pos == self.buf.len() {
+            self.pos = 0;
             self.buf.clear();
-        } else {
-            let mut count = pos;
-            while count > 0 {
-                count -= 1;
-                self.buf.remove(0);
-            }
         }
     }
 
     fn parse(&mut self) -> Result<()> {
-        match parse_one_value(&self.buf, 0, self.buf_bulk) {
+        match parse_one_value(&self.buf[self.pos..], 0, self.buf_bulk) {
             Some(ParseResult::Res(value, pos)) => {
                 self.res.push(value);
-                self.prune_buf(pos);
+                self.pos += pos;
+                self.prune_buf();
                 self.parse()
-            }
+            },
             Some(ParseResult::Err(message)) => {
-                self.prune_buf(0);
+                self.pos = self.buf.len();
+                self.prune_buf();
                 Err(Error::new(ErrorKind::InvalidData, message.to_string()))
-            }
-            None => Ok(())
+            },
+            None => Ok(()),
         }
     }
 }
@@ -269,14 +262,14 @@ enum ErrorMessage {
 }
 
 impl ErrorMessage {
-    fn to_string(&self) -> &str {
+    fn to_string(self) -> &'static str {
         match self {
-            &ErrorMessage::ParseString => "Parse '+' failed",
-            &ErrorMessage::ParseError => "Parse '-' failed",
-            &ErrorMessage::ParseInteger => "Parse ':' failed",
-            &ErrorMessage::ParseBulk => "Parse '$' failed",
-            &ErrorMessage::ParseArray => "Parse '*' failed",
-            &ErrorMessage::ParseInvalid => "Invalid Chunk: parse failed",
+            ErrorMessage::ParseString => "Parse '+' failed",
+            ErrorMessage::ParseError => "Parse '-' failed",
+            ErrorMessage::ParseInteger => "Parse ':' failed",
+            ErrorMessage::ParseBulk => "Parse '$' failed",
+            ErrorMessage::ParseArray => "Parse '*' failed",
+            ErrorMessage::ParseInvalid => "Invalid Chunk: parse failed",
         }
     }
 }
@@ -311,8 +304,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
             } else {
                 None
             }
-        }
-
+        },
         // Value::Error
         b'-' => {
             if let Some(pos) = read_crlf(buffer, offset) {
@@ -325,8 +317,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
             } else {
                 None
             }
-        }
-
+        },
         // Value::Integer
         b':' => {
             if let Some(pos) = read_crlf(buffer, offset) {
@@ -339,8 +330,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
             } else {
                 None
             }
-        }
-
+        },
         // Value::Bulk
         b'$' => {
             if let Some(pos) = read_crlf(buffer, offset) {
@@ -352,7 +342,6 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
                             // Null bulk
                             return Some(ParseResult::Res(Value::Null, offset));
                         }
-
                         if int < -1 || int >= RESP_MAX_SIZE {
                             return Some(ParseResult::Err(ErrorMessage::ParseBulk));
                         }
@@ -362,14 +351,12 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
                         if end + 1 >= buf_len {
                             return None;
                         }
-
                         if !is_crlf(buffer[end], buffer[end + 1]) {
                             return Some(ParseResult::Err(ErrorMessage::ParseBulk));
                         }
 
                         let bytes = buffer[offset..end].as_ref();
                         offset = end + 2;
-
                         if buf_bulk {
                             let mut buf: Vec<u8> = Vec::with_capacity(bytes.len());
                             buf.extend(bytes);
@@ -380,14 +367,13 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
                             Ok(string) => Some(ParseResult::Res(Value::Bulk(string), offset)),
                             Err(_) => Some(ParseResult::Err(ErrorMessage::ParseBulk)),
                         }
-                    }
+                    },
                     Err(_) => Some(ParseResult::Err(ErrorMessage::ParseBulk)),
                 }
             } else {
                 None
             }
-        }
-
+        },
         // Value::Array
         b'*' => {
             if let Some(pos) = read_crlf(buffer, offset) {
@@ -399,7 +385,6 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
                             // Null array
                             return Some(ParseResult::Res(Value::NullArray, offset));
                         }
-
                         if int < -1 || int >= RESP_MAX_SIZE {
                             return Some(ParseResult::Err(ErrorMessage::ParseArray));
                         }
@@ -410,25 +395,23 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
                                 Some(ParseResult::Res(value, pos)) => {
                                     array.push(value);
                                     offset = pos;
-                                }
+                                },
                                 Some(ParseResult::Err(message)) => {
                                     return Some(ParseResult::Err(message));
-                                }
+                                },
                                 None => {
                                     return None;
-                                }
+                                },
                             }
                         }
-
                         Some(ParseResult::Res(Value::Array(array), offset))
-                    }
+                    },
                     Err(_) => Some(ParseResult::Err(ErrorMessage::ParseArray)),
                 }
             } else {
                 None
             }
-        }
-
+        },
         _ => Some(ParseResult::Err(ErrorMessage::ParseInvalid)),
     }
 }
