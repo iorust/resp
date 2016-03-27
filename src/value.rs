@@ -3,6 +3,7 @@
 use std::vec::Vec;
 use std::string::String;
 use std::io::{Result, Error, ErrorKind};
+use std::marker::{Send, Sync};
 use super::serialize::{encode};
 
 /// Represents a RESP value, see [Redis Protocol specification](http://redis.io/topics/protocol).
@@ -172,8 +173,11 @@ impl Value {
     }
 }
 
+unsafe impl Sync for Value {}
+unsafe impl Send for Value {}
+
 fn format_to_hex_str(u: &u8) -> String {
-    if u >= &16 {
+    if *u >= 16 {
         format!(" {:x}", u)
     } else {
         format!(" 0{:x}", u)
@@ -182,8 +186,18 @@ fn format_to_hex_str(u: &u8) -> String {
 
 fn format_index_str(index: usize, num_len: usize) -> String {
     let mut string = index.to_string();
-    while string.len() < num_len {
-        string.insert(0, ' ');
+    let len = string.len();
+
+    if num_len > len {
+        let mut len = len;
+        string.reserve(num_len - len);
+        loop {
+            string.insert(0, ' ');
+            len += 1;
+            if num_len == len {
+                break;
+            }
+        }
     }
     format!("{}) ", string)
 }

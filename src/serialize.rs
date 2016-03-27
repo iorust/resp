@@ -29,7 +29,7 @@ pub fn encode(value: &Value) -> Vec<u8> {
 /// Encode a array of slice string to RESP binary buffer. It is usefull for redis client to encode request command.
 /// # Examples
 /// ```
-/// # use self::resp::{Value, encode_slice};
+/// # use self::resp::encode_slice;
 /// let array = ["SET", "a", "1"];
 /// assert_eq!(encode_slice(&array), "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n".to_string().into_bytes());
 /// ```
