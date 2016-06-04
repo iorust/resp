@@ -4,7 +4,7 @@ use std::vec::Vec;
 use std::string::String;
 use std::io::{Result, Error, ErrorKind};
 use std::marker::{Send, Sync};
-use super::serialize::{encode};
+use super::serialize::encode;
 
 /// Represents a RESP value, see [Redis Protocol specification](http://redis.io/topics/protocol).
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -40,7 +40,7 @@ impl Value {
         match *self {
             Value::Null => true,
             Value::NullArray => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -54,7 +54,7 @@ impl Value {
     pub fn is_error(&self) -> bool {
         match *self {
             Value::Error(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -167,7 +167,7 @@ impl Value {
                     string.push_str(" ...");
                 }
                 format!("(Buffer) {}", &string[1..])
-            },
+            }
             Value::Array(ref val) => format!("{}", format_array_to_str(val, 0)),
         }
     }
@@ -216,7 +216,11 @@ fn format_array_to_str(array: &Vec<Value>, min_index_len: usize) -> String {
     }
     for (i, value) in array.iter().enumerate() {
         // first element don't need indent.
-        let num_len = if i == 0 { index_len - min_index_len } else { index_len };
+        let num_len = if i == 0 {
+            index_len - min_index_len
+        } else {
+            index_len
+        };
         string.push_str(&format_index_str(i + 1, num_len));
         match value {
             &Value::Array(ref sub) => string.push_str(&format_array_to_str(sub, index_len + 3)),
@@ -318,7 +322,8 @@ mod tests {
         vec.push(Value::BufBulk(vec![79, 75]));
         let val = Value::Array(vec);
         assert_eq!(val.to_encoded_string().unwrap(),
-            "*7\r\n$-1\r\n*-1\r\n+OK\r\n-message\r\n:123456789\r\n$5\r\nHello\r\n$2\r\nOK\r\n");
+                   "*7\r\n$-1\r\n*-1\r\n+OK\r\n-message\r\n:123456789\r\n$5\r\nHello\r\n\
+                   $2\r\nOK\r\n");
     }
 
     #[test]
@@ -332,23 +337,23 @@ mod tests {
         assert_eq!(Value::BufBulk(vec![]).to_beautify_string(), "(Empty Buffer)");
         assert_eq!(Value::BufBulk(vec![0, 100]).to_beautify_string(), "(Buffer) 00 64");
         assert_eq!(Value::BufBulk(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-            17, 18]).to_beautify_string(),
-            "(Buffer) 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f ...");
+                                       17, 18]).to_beautify_string(),
+                   "(Buffer) 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f ...");
         assert_eq!(Value::Array(vec![]).to_beautify_string(), "(Empty Array)");
         assert_eq!(Value::Array(vec![Value::Null, Value::Integer(123)]).to_beautify_string(),
-            "1) (Null)\n2) (Integer) 123");
+                   "1) (Null)\n2) (Integer) 123");
 
-        let _values = vec![
-            Value::Null,
-            Value::NullArray,
-            Value::String("OK".to_string()),
-            Value::Error("Err".to_string()),
-            Value::Integer(123),
-            Value::Bulk("Bulk String".to_string()),
-            Value::Array(vec![]),
-            Value::BufBulk(vec![0, 100]),
-            Value::Array(vec![Value::Array(vec![]), Value::Integer(123), Value::Bulk("Bulk String".to_string())])
-        ];
+        let _values = vec![Value::Null,
+                           Value::NullArray,
+                           Value::String("OK".to_string()),
+                           Value::Error("Err".to_string()),
+                           Value::Integer(123),
+                           Value::Bulk("Bulk String".to_string()),
+                           Value::Array(vec![]),
+                           Value::BufBulk(vec![0, 100]),
+                           Value::Array(vec![Value::Array(vec![]),
+                                             Value::Integer(123),
+                                             Value::Bulk("Bulk String".to_string())])];
         let mut values = _values.clone();
         values.push(Value::Array(_values));
         values.push(Value::Null);
@@ -356,7 +361,7 @@ mod tests {
         _values.push(Value::Array(values));
         _values.push(Value::Null);
 
-let enum_fmt_result = " 1) (Null)
+        let enum_fmt_result = " 1) (Null)
  2) (Null Array)
  3) OK
  4) (Error) Err

@@ -26,12 +26,14 @@ pub fn encode(value: &Value) -> Vec<u8> {
     res
 }
 
-/// Encode a array of slice string to RESP binary buffer. It is usefull for redis client to encode request command.
+/// Encode a array of slice string to RESP binary buffer.
+/// It is usefull for redis client to encode request command.
 /// # Examples
 /// ```
 /// # use self::resp::encode_slice;
 /// let array = ["SET", "a", "1"];
-/// assert_eq!(encode_slice(&array), "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n".to_string().into_bytes());
+/// assert_eq!(encode_slice(&array),
+///            "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n".to_string().into_bytes());
 /// ```
 pub fn encode_slice(slice: &[&str]) -> Vec<u8> {
     let array: Vec<Value> = slice.iter().map(|string| Value::Bulk(string.to_string())).collect();
@@ -44,39 +46,39 @@ fn buf_encode(value: &Value, buf: &mut Vec<u8>) {
     match *value {
         Value::Null => {
             buf.extend_from_slice(NULL_BYTES);
-        },
+        }
         Value::NullArray => {
             buf.extend_from_slice(NULL_ARRAY_BYTES);
-        },
+        }
         Value::String(ref val) => {
             buf.push(b'+');
             buf.extend_from_slice(val.as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
-        },
+        }
         Value::Error(ref val) => {
             buf.push(b'-');
             buf.extend_from_slice(val.as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
-        },
+        }
         Value::Integer(ref val) => {
             buf.push(b':');
             buf.extend_from_slice(val.to_string().as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
-        },
+        }
         Value::Bulk(ref val) => {
             buf.push(b'$');
             buf.extend_from_slice(val.len().to_string().as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
             buf.extend_from_slice(val.as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
-        },
+        }
         Value::BufBulk(ref val) => {
             buf.push(b'$');
             buf.extend_from_slice(val.len().to_string().as_bytes());
             buf.extend_from_slice(CLRF_BYTES);
             buf.extend_from_slice(val);
             buf.extend_from_slice(CLRF_BYTES);
-        },
+        }
         Value::Array(ref val) => {
             buf.push(b'*');
             buf.extend_from_slice(val.len().to_string().as_bytes());
@@ -84,7 +86,7 @@ fn buf_encode(value: &Value, buf: &mut Vec<u8>) {
             for item in val {
                 buf_encode(item, buf);
             }
-        },
+        }
     }
 }
 
@@ -125,7 +127,8 @@ impl Decoder {
         }
     }
 
-    /// Creates a new decoder instance for decoding the RESP buffers. The instance will decode bulk value to buffer bulk.
+    /// Creates a new decoder instance for decoding the RESP buffers. The instance will decode
+    /// bulk value to buffer bulk.
     /// # Examples
     /// ```
     /// # use self::resp::{Decoder, Value};
@@ -188,12 +191,14 @@ impl Decoder {
         Some(self.res.remove(0))
     }
 
-    /// Returns the buffer's length that wait for decoding. It usually is `0`. Non-zero means that decoder need more buffer.
+    /// Returns the buffer's length that wait for decoding. It usually is `0`. Non-zero means that
+    /// decoder need more buffer.
     pub fn buffer_len(&self) -> usize {
         self.buf.len()
     }
 
-    /// Returns decoded values count. The decoded values will be hold by decoder, until you read them.
+    /// Returns decoded values count. The decoded values will be hold by decoder, until you read
+    /// them.
     pub fn result_len(&self) -> usize {
         self.res.len()
     }
@@ -212,12 +217,12 @@ impl Decoder {
                 self.pos += pos;
                 self.prune_buf();
                 self.parse()
-            },
+            }
             Some(ParseResult::Err(message)) => {
                 self.pos = self.buf.len();
                 self.prune_buf();
                 Err(Error::new(ErrorKind::InvalidData, message.to_string()))
-            },
+            }
             None => Ok(()),
         }
     }
@@ -246,7 +251,7 @@ fn is_crlf(a: u8, b: u8) -> bool {
 fn read_crlf(buffer: &[u8], start: usize) -> Option<usize> {
     for pos in start..(buffer.len() - 1) {
         if is_crlf(buffer[pos], buffer[pos + 1]) {
-            return Some(pos)
+            return Some(pos);
         }
     }
     None
@@ -304,7 +309,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
             } else {
                 None
             }
-        },
+        }
         // Value::Error
         b'-' => {
             if let Some(pos) = read_crlf(buffer, offset) {
@@ -317,7 +322,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
             } else {
                 None
             }
-        },
+        }
         // Value::Integer
         b':' => {
             if let Some(pos) = read_crlf(buffer, offset) {
@@ -330,7 +335,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
             } else {
                 None
             }
-        },
+        }
         // Value::Bulk
         b'$' => {
             if let Some(pos) = read_crlf(buffer, offset) {
@@ -367,13 +372,13 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
                             Ok(string) => Some(ParseResult::Res(Value::Bulk(string), offset)),
                             Err(_) => Some(ParseResult::Err(ErrorMessage::ParseBulk)),
                         }
-                    },
+                    }
                     Err(_) => Some(ParseResult::Err(ErrorMessage::ParseBulk)),
                 }
             } else {
                 None
             }
-        },
+        }
         // Value::Array
         b'*' => {
             if let Some(pos) = read_crlf(buffer, offset) {
@@ -395,23 +400,23 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> Option<Parse
                                 Some(ParseResult::Res(value, pos)) => {
                                     array.push(value);
                                     offset = pos;
-                                },
+                                }
                                 Some(ParseResult::Err(message)) => {
                                     return Some(ParseResult::Err(message));
-                                },
+                                }
                                 None => {
                                     return None;
-                                },
+                                }
                             }
                         }
                         Some(ParseResult::Res(Value::Array(array), offset))
-                    },
+                    }
                     Err(_) => Some(ParseResult::Err(ErrorMessage::ParseArray)),
                 }
             } else {
                 None
             }
-        },
+        }
         _ => Some(ParseResult::Err(ErrorMessage::ParseInvalid)),
     }
 }
@@ -425,11 +430,11 @@ mod tests {
     fn fn_encode_slice() {
         let array = ["SET", "a", "1"];
         assert_eq!(String::from_utf8(encode_slice(&array)).unwrap(),
-            "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n");
+                   "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n");
 
         let array = vec!["SET", "a", "1"];
         assert_eq!(String::from_utf8(encode_slice(&array)).unwrap(),
-            "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n");
+                   "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n");
     }
 
     #[test]
@@ -479,11 +484,10 @@ mod tests {
         let array = vec!["SET", "a", "1"];
         let buf = encode_slice(&array);
         assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Array(vec![
-            Value::Bulk("SET".to_string()),
-            Value::Bulk("a".to_string()),
-            Value::Bulk("1".to_string())
-        ]));
+        assert_eq!(decoder.read().unwrap(),
+                   Value::Array(vec![Value::Bulk("SET".to_string()),
+                                     Value::Bulk("a".to_string()),
+                                     Value::Bulk("1".to_string())]));
         assert_eq!(decoder.read(), None);
     }
 
@@ -518,22 +522,23 @@ mod tests {
 
         let buf = Value::Bulk("Hello".to_string()).encode();
         assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::BufBulk("Hello".to_string().into_bytes()));
+        assert_eq!(decoder.read().unwrap(),
+                   Value::BufBulk("Hello".to_string().into_bytes()));
         assert_eq!(decoder.read(), None);
 
         let buf = Value::BufBulk("Hello".to_string().into_bytes()).encode();
         assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::BufBulk("Hello".to_string().into_bytes()));
+        assert_eq!(decoder.read().unwrap(),
+                   Value::BufBulk("Hello".to_string().into_bytes()));
         assert_eq!(decoder.read(), None);
 
         let array = vec!["SET", "a", "1"];
         let buf = encode_slice(&array);
         assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Array(vec![
-            Value::BufBulk("SET".to_string().into_bytes()),
-            Value::BufBulk("a".to_string().into_bytes()),
-            Value::BufBulk("1".to_string().into_bytes())
-        ]));
+        assert_eq!(decoder.read().unwrap(),
+                   Value::Array(vec![Value::BufBulk("SET".to_string().into_bytes()),
+                                     Value::BufBulk("a".to_string().into_bytes()),
+                                     Value::BufBulk("1".to_string().into_bytes())]));
         assert_eq!(decoder.read(), None);
     }
 
@@ -590,14 +595,12 @@ mod tests {
         assert_eq!(decoder.feed(&buf).unwrap(), ());
         assert_eq!(decoder.read().unwrap(), Value::Bulk("".to_string()));
 
-        let _values = vec![
-            Value::Null,
-            Value::NullArray,
-            Value::String("abcdefg".to_string()),
-            Value::Error("abcdefg".to_string()),
-            Value::Integer(123456789),
-            Value::Bulk("abcdefg".to_string())
-        ];
+        let _values = vec![Value::Null,
+                           Value::NullArray,
+                           Value::String("abcdefg".to_string()),
+                           Value::Error("abcdefg".to_string()),
+                           Value::Integer(123456789),
+                           Value::Bulk("abcdefg".to_string())];
         let mut values = _values.clone();
         values.push(Value::Array(_values));
         let buf: Vec<u8> = values.iter().flat_map(|value| value.encode()).collect();
