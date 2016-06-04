@@ -27,6 +27,10 @@ fn prepare_values() -> Value {
     Value::Array(a)
 }
 
+// Last result:
+// test decode_values ... bench:       5,984 ns/iter (+/- 1,495)
+// test encode_values ... bench:       3,567 ns/iter (+/- 478)
+
 #[bench]
 fn encode_values(b: &mut Bencher) {
     let value = prepare_values();
