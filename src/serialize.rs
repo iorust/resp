@@ -1,9 +1,8 @@
 //! RESP serialize
 
-use std::str;
 use std::vec::Vec;
 use std::string::String;
-use std::io::{Result, Error, ErrorKind};
+use super::error::{Result, Error, ErrorCode};
 
 use super::Value;
 
@@ -232,30 +231,23 @@ impl Decoder {
                 self.exp = exp;
                 Ok(())
             }
-            ParseResult::Err(message) => {
+            ParseResult::Err(code) => {
                 self.pos = self.buf.len();
                 self.exp = EXPECT_BYTES;
                 self.prune_buf();
-                Err(Error::new(ErrorKind::InvalidData, message.to_string()))
+                Err(Error::Protocol(code))
             }
         }
     }
 }
 
 fn parse_string(bytes: &[u8]) -> Result<String> {
-    if let Ok(string) = str::from_utf8(bytes) {
-        return Ok(string.to_string());
-    }
-    Err(Error::new(ErrorKind::InvalidData, "parse string failed"))
+    String::from_utf8(bytes.to_vec()).map_err(|err| Error::FromUtf8(err))
 }
 
 fn parse_integer(bytes: &[u8]) -> Result<i64> {
-    if let Ok(string) = str::from_utf8(bytes) {
-        if let Ok(int) = string.parse::<i64>() {
-            return Ok(int);
-        }
-    }
-    Err(Error::new(ErrorKind::InvalidData, "parse integer failed"))
+    let str_integer = try!(parse_string(bytes));
+    (str_integer.parse::<i64>()).map_err(|_| Error::Protocol(ErrorCode::InvalidInteger))
 }
 
 fn is_crlf(a: u8, b: u8) -> bool {
@@ -271,43 +263,21 @@ fn read_crlf(buffer: &[u8], start: usize) -> Option<usize> {
     None
 }
 
-enum ErrorMessage {
-    ParseString,
-    ParseError,
-    ParseInteger,
-    ParseBulk,
-    ParseArray,
-    ParseInvalid,
-}
-
-impl ErrorMessage {
-    fn to_string(self) -> &'static str {
-        match self {
-            ErrorMessage::ParseString => "Parse '+' failed",
-            ErrorMessage::ParseError => "Parse '-' failed",
-            ErrorMessage::ParseInteger => "Parse ':' failed",
-            ErrorMessage::ParseBulk => "Parse '$' failed",
-            ErrorMessage::ParseArray => "Parse '*' failed",
-            ErrorMessage::ParseInvalid => "Invalid Chunk: parse failed",
-        }
-    }
-}
-
 enum ParseResult {
     // parse success
     Res(Value, usize),
     // expect more data to parse
     Exp(usize),
     // parse failed
-    Err(ErrorMessage),
+    Err(ErrorCode),
 }
 
 fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> ParseResult {
     let buf_len = buffer.len();
-    let identifier = buffer[offset];
+    let prefix = buffer[offset];
     let mut offset = offset + 1;
 
-    match identifier {
+    match prefix {
         // Value::String
         b'+' => {
             if let Some(cr_pos) = read_crlf(buffer, offset) {
@@ -315,7 +285,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> ParseResult 
                 offset = cr_pos + 2;
                 match parse_string(bytes) {
                     Ok(string) => ParseResult::Res(Value::String(string), offset),
-                    Err(_) => ParseResult::Err(ErrorMessage::ParseString),
+                    Err(_) => ParseResult::Err(ErrorCode::InvalidString),
                 }
             } else {
                 ParseResult::Exp(buf_len + 1)
@@ -328,7 +298,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> ParseResult 
                 offset = cr_pos + 2;
                 match parse_string(bytes) {
                     Ok(string) => ParseResult::Res(Value::Error(string), offset),
-                    Err(_) => ParseResult::Err(ErrorMessage::ParseError),
+                    Err(_) => ParseResult::Err(ErrorCode::InvalidError),
                 }
             } else {
                 ParseResult::Exp(buf_len + 1)
@@ -341,7 +311,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> ParseResult 
                 offset = cr_pos + 2;
                 match parse_integer(bytes) {
                     Ok(int) => ParseResult::Res(Value::Integer(int), offset),
-                    Err(_) => ParseResult::Err(ErrorMessage::ParseInteger),
+                    Err(_) => ParseResult::Err(ErrorCode::InvalidInteger),
                 }
             } else {
                 ParseResult::Exp(buf_len + 1)
@@ -359,7 +329,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> ParseResult 
                             return ParseResult::Res(Value::Null, offset);
                         }
                         if int < -1 || int >= RESP_MAX_SIZE {
-                            return ParseResult::Err(ErrorMessage::ParseBulk);
+                            return ParseResult::Err(ErrorCode::InvalidBulk);
                         }
 
                         let int = int as usize;
@@ -368,7 +338,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> ParseResult 
                             return ParseResult::Exp(cr_pos + 2);
                         }
                         if !is_crlf(buffer[cr_pos], buffer[cr_pos + 1]) {
-                            return ParseResult::Err(ErrorMessage::ParseBulk);
+                            return ParseResult::Err(ErrorCode::InvalidBulk);
                         }
 
                         let bytes = buffer[offset..cr_pos].as_ref();
@@ -380,10 +350,10 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> ParseResult 
                         }
                         match parse_string(bytes) {
                             Ok(string) => ParseResult::Res(Value::Bulk(string), offset),
-                            Err(_) => ParseResult::Err(ErrorMessage::ParseBulk),
+                            Err(_) => ParseResult::Err(ErrorCode::InvalidBulk),
                         }
                     }
-                    Err(_) => ParseResult::Err(ErrorMessage::ParseBulk),
+                    Err(_) => ParseResult::Err(ErrorCode::InvalidBulk),
                 }
             } else {
                 ParseResult::Exp(buf_len + 1)
@@ -401,7 +371,7 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> ParseResult 
                             return ParseResult::Res(Value::NullArray, offset);
                         }
                         if int < -1 || int >= RESP_MAX_SIZE {
-                            return ParseResult::Err(ErrorMessage::ParseArray);
+                            return ParseResult::Err(ErrorCode::InvalidArray);
                         }
 
                         let mut array: Vec<Value> = Vec::with_capacity(int as usize);
@@ -416,23 +386,23 @@ fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> ParseResult 
                                     array.push(value);
                                     offset = pos;
                                 }
-                                ParseResult::Exp(_exp) => {
-                                    return ParseResult::Exp(_exp);
+                                ParseResult::Exp(exp) => {
+                                    return ParseResult::Exp(exp);
                                 }
-                                ParseResult::Err(message) => {
-                                    return ParseResult::Err(message);
+                                ParseResult::Err(code) => {
+                                    return ParseResult::Err(code);
                                 }
                             }
                         }
                         ParseResult::Res(Value::Array(array), offset)
                     }
-                    Err(_) => ParseResult::Err(ErrorMessage::ParseArray),
+                    Err(_) => ParseResult::Err(ErrorCode::InvalidArray),
                 }
             } else {
                 ParseResult::Exp(buf_len + 1)
             }
         }
-        _ => ParseResult::Err(ErrorMessage::ParseInvalid),
+        prefix => ParseResult::Err(ErrorCode::InvalidPrefix(prefix)),
     }
 }
 

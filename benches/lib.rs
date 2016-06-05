@@ -30,6 +30,8 @@ fn prepare_values() -> Value {
 // Last result:
 // test decode_values ... bench:       5,984 ns/iter (+/- 1,495)
 // test encode_values ... bench:       3,567 ns/iter (+/- 478)
+// test decode_values ... bench:       5,216 ns/iter (+/- 2,213)
+// test encode_values ... bench:       3,080 ns/iter (+/- 56)
 
 #[bench]
 fn encode_values(b: &mut Bencher) {

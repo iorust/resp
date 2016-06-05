@@ -8,7 +8,9 @@
 //! RESP(REdis Serialization Protocol) Serialization for Rust.
 
 pub use self::value::Value;
+pub use self::error::{Error, ErrorCode, Result};
 pub use self::serialize::{encode, encode_slice, Decoder};
 
 mod value;
+mod error;
 mod serialize;

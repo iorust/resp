@@ -2,9 +2,9 @@
 
 use std::vec::Vec;
 use std::string::String;
-use std::io::{Result, Error, ErrorKind};
 use std::marker::{Send, Sync};
 use super::serialize::encode;
+use super::error::{Result, Error};
 
 /// Represents a RESP value, see [Redis Protocol specification](http://redis.io/topics/protocol).
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -78,22 +78,22 @@ impl Value {
     /// ```
     pub fn to_encoded_string(&self) -> Result<String> {
         let bytes = self.encode();
-        String::from_utf8(bytes).map_err(|err| Error::new(ErrorKind::InvalidData, err))
+        String::from_utf8(bytes).map_err(|err| Error::FromUtf8(err))
     }
 
     /// Encode the value to beautify formated string.
     /// # Examples
     /// ```
     /// # use self::resp::{Value};
-    /// assert_eq!(Value::Null.to_beautify_string(), "(Null)");
-    /// assert_eq!(Value::NullArray.to_beautify_string(), "(Null Array)");
-    /// assert_eq!(Value::String("OK".to_string()).to_beautify_string(), "OK");
-    /// assert_eq!(Value::Error("Err".to_string()).to_beautify_string(), "(Error) Err");
-    /// assert_eq!(Value::Integer(123).to_beautify_string(), "(Integer) 123");
-    /// assert_eq!(Value::Bulk("Bulk String".to_string()).to_beautify_string(), "\"Bulk String\"");
-    /// assert_eq!(Value::BufBulk(vec![]).to_beautify_string(), "(Empty Buffer)");
-    /// assert_eq!(Value::BufBulk(vec![0, 100]).to_beautify_string(), "(Buffer) 00 64");
-    /// assert_eq!(Value::Array(vec![]).to_beautify_string(), "(Empty Array)");
+    /// assert_eq!(Value::Null.to_string_pretty(), "(Null)");
+    /// assert_eq!(Value::NullArray.to_string_pretty(), "(Null Array)");
+    /// assert_eq!(Value::String("OK".to_string()).to_string_pretty(), "OK");
+    /// assert_eq!(Value::Error("Err".to_string()).to_string_pretty(), "(Error) Err");
+    /// assert_eq!(Value::Integer(123).to_string_pretty(), "(Integer) 123");
+    /// assert_eq!(Value::Bulk("Bulk String".to_string()).to_string_pretty(), "\"Bulk String\"");
+    /// assert_eq!(Value::BufBulk(vec![]).to_string_pretty(), "(Empty Buffer)");
+    /// assert_eq!(Value::BufBulk(vec![0, 100]).to_string_pretty(), "(Buffer) 00 64");
+    /// assert_eq!(Value::Array(vec![]).to_string_pretty(), "(Empty Array)");
     /// ```
     ///
     /// A full formated example:
@@ -147,7 +147,7 @@ impl Value {
     ///    11) (Null)
     /// 13) (Null)
     /// ```
-    pub fn to_beautify_string(&self) -> String {
+    pub fn to_string_pretty(&self) -> String {
         match *self {
             Value::Null => format!("{}", "(Null)"),
             Value::NullArray => format!("{}", "(Null Array)"),
@@ -170,6 +170,10 @@ impl Value {
             }
             Value::Array(ref val) => format!("{}", format_array_to_str(val, 0)),
         }
+    }
+    /// [DEPRECATED] Alias of to_string_pretty.
+    pub fn to_beautify_string(&self) -> String {
+        self.to_string_pretty()
     }
 }
 
@@ -224,7 +228,7 @@ fn format_array_to_str(array: &Vec<Value>, min_index_len: usize) -> String {
         string.push_str(&format_index_str(i + 1, num_len));
         match value {
             &Value::Array(ref sub) => string.push_str(&format_array_to_str(sub, index_len + 3)),
-            _ => string.push_str(&value.to_beautify_string()),
+            _ => string.push_str(&value.to_string_pretty()),
         };
         if i + 1 < len {
             string.push('\n');
@@ -327,20 +331,23 @@ mod tests {
     }
 
     #[test]
-    fn enum_to_beautify_string() {
+    fn enum_to_string_pretty() {
+        // test the alias of to_string_pretty.
         assert_eq!(Value::Null.to_beautify_string(), "(Null)");
-        assert_eq!(Value::NullArray.to_beautify_string(), "(Null Array)");
-        assert_eq!(Value::String("OK".to_string()).to_beautify_string(), "OK");
-        assert_eq!(Value::Error("Err".to_string()).to_beautify_string(), "(Error) Err");
-        assert_eq!(Value::Integer(123).to_beautify_string(), "(Integer) 123");
-        assert_eq!(Value::Bulk("Bulk String".to_string()).to_beautify_string(), "\"Bulk String\"");
-        assert_eq!(Value::BufBulk(vec![]).to_beautify_string(), "(Empty Buffer)");
-        assert_eq!(Value::BufBulk(vec![0, 100]).to_beautify_string(), "(Buffer) 00 64");
+
+        assert_eq!(Value::Null.to_string_pretty(), "(Null)");
+        assert_eq!(Value::NullArray.to_string_pretty(), "(Null Array)");
+        assert_eq!(Value::String("OK".to_string()).to_string_pretty(), "OK");
+        assert_eq!(Value::Error("Err".to_string()).to_string_pretty(), "(Error) Err");
+        assert_eq!(Value::Integer(123).to_string_pretty(), "(Integer) 123");
+        assert_eq!(Value::Bulk("Bulk String".to_string()).to_string_pretty(), "\"Bulk String\"");
+        assert_eq!(Value::BufBulk(vec![]).to_string_pretty(), "(Empty Buffer)");
+        assert_eq!(Value::BufBulk(vec![0, 100]).to_string_pretty(), "(Buffer) 00 64");
         assert_eq!(Value::BufBulk(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-                                       17, 18]).to_beautify_string(),
+                                       17, 18]).to_string_pretty(),
                    "(Buffer) 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f ...");
-        assert_eq!(Value::Array(vec![]).to_beautify_string(), "(Empty Array)");
-        assert_eq!(Value::Array(vec![Value::Null, Value::Integer(123)]).to_beautify_string(),
+        assert_eq!(Value::Array(vec![]).to_string_pretty(), "(Empty Array)");
+        assert_eq!(Value::Array(vec![Value::Null, Value::Integer(123)]).to_string_pretty(),
                    "1) (Null)\n2) (Integer) 123");
 
         let _values = vec![Value::Null,
@@ -409,7 +416,7 @@ mod tests {
    11) (Null)
 13) (Null)";
 
-        assert_eq!(Value::Array(_values).to_beautify_string(), enum_fmt_result);
-        // println!("{}", Value::Array(_values).to_beautify_string());
+        assert_eq!(Value::Array(_values).to_string_pretty(), enum_fmt_result);
+        // println!("{}", Value::Array(_values).to_string_pretty());
     }
 }
