@@ -2,12 +2,11 @@
 
 use std::vec::Vec;
 use std::string::String;
+use std::io::{Read, BufRead, BufReader};
 use super::error::{Result, Error, ErrorCode};
 
 use super::Value;
 
-// The shortest available buffer length, "identifier" byte, and two "CRLF" bytes.
-const EXPECT_BYTES: usize = 3;
 /// up to 512 MB in length
 const RESP_MAX_SIZE: i64 = 512 * 1024 * 1024;
 const CRLF_BYTES: &'static [u8] = b"\r\n";
@@ -91,319 +90,148 @@ fn buf_encode(value: &Value, buf: &mut Vec<u8>) {
     }
 }
 
-/// A streaming RESP decoder.
+/// A streaming RESP Decoder.
 #[derive(Debug)]
-pub struct Decoder {
+pub struct Decoder<R> {
     buf_bulk: bool,
-    pos: usize,
-    exp: usize,
-    buf: Vec<u8>,
-    res: Vec<Value>,
+    reader: BufReader<R>,
 }
 
-impl Decoder {
-    /// Creates a new decoder instance for decoding the RESP buffers.
+impl<R: Read> Decoder<R> {
+    /// Creates a new Decoder instance for decoding the RESP buffers.
     /// # Examples
     /// ```
+    /// # use std::io::BufReader;
     /// # use self::resp::{Decoder, Value};
-    /// let mut decoder = Decoder::new();
     ///
     /// let value = Value::Bulk("Hello".to_string());
-    /// assert_eq!(decoder.feed(&value.encode()).unwrap(), ());
-    /// assert_eq!(decoder.read().unwrap(), value);
-    /// assert_eq!(decoder.read(), None);
-
-    /// let value = Value::BufBulk("Hello".to_string().into_bytes());
-    /// assert_eq!(decoder.feed(&value.encode()).unwrap(), ());
-    ///
-    /// // Always decode "$" buffers to Value::Bulk even if feed Value::BufBulk buffers
-    /// assert_eq!(decoder.read().unwrap(), Value::Bulk("Hello".to_string()));
-    /// assert_eq!(decoder.read(), None);
+    /// let buf = value.encode();
+    /// let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+    /// assert_eq!(decoder.decode().unwrap(), Value::Bulk("Hello".to_string()));
     /// ```
-    pub fn new() -> Self {
+    pub fn new(reader: BufReader<R>) -> Self {
         Decoder {
             buf_bulk: false,
-            pos: 0,
-            exp: EXPECT_BYTES,
-            buf: Vec::new(),
-            res: Vec::with_capacity(8),
+            reader: reader,
         }
     }
 
-    /// Creates a new decoder instance for decoding the RESP buffers. The instance will decode
+    /// Creates a new Decoder instance for decoding the RESP buffers. The instance will decode
     /// bulk value to buffer bulk.
     /// # Examples
     /// ```
+    /// # use std::io::BufReader;
     /// # use self::resp::{Decoder, Value};
-    /// let mut decoder = Decoder::with_buf_bulk();
     ///
     /// let value = Value::Bulk("Hello".to_string());
-    /// assert_eq!(decoder.feed(&value.encode()).unwrap(), ());
-    ///
+    /// let buf = value.encode();
+    /// let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
     /// // Always decode "$" buffers to Value::BufBulk even if feed Value::Bulk buffers
-    /// assert_eq!(decoder.read().unwrap(), Value::BufBulk("Hello".to_string().into_bytes()));
-    /// assert_eq!(decoder.read(), None);
-
-    /// let value = Value::BufBulk("Hello".to_string().into_bytes());
-    /// assert_eq!(decoder.feed(&value.encode()).unwrap(), ());
-    /// assert_eq!(decoder.read().unwrap(), value);
-    /// assert_eq!(decoder.read(), None);
+    /// assert_eq!(decoder.decode().unwrap(), Value::BufBulk("Hello".to_string().into_bytes()));
     /// ```
-    pub fn with_buf_bulk() -> Self {
+    pub fn with_buf_bulk(reader: BufReader<R>) -> Self {
         Decoder {
             buf_bulk: true,
-            pos: 0,
-            exp: EXPECT_BYTES,
-            buf: Vec::new(),
-            res: Vec::with_capacity(8),
+            reader: reader,
         }
     }
 
-    /// Feeds buffers to decoder. The buffer may contain one more values, or be a part of value.
-    /// You can feed buffer at all times.
-    /// # Examples
-    /// ```
-    /// # use self::resp::{Decoder, Value};
-    /// let mut decoder = Decoder::new();
-    /// assert_eq!(decoder.buffer_len(), 0);
-    ///
-    /// let value = Value::Bulk("Test".to_string());
-    /// let buf = value.encode();
-    /// assert_eq!(decoder.feed(&buf[0..4]).unwrap(), ());
-    /// assert_eq!(decoder.read(), None);
-    /// assert_eq!(decoder.buffer_len(), 4);
-    /// assert_eq!(decoder.result_len(), 0);
-    ///
-    /// assert_eq!(decoder.feed(&buf[4..]).unwrap(), ());
-    /// assert_eq!(decoder.buffer_len(), 0);
-    /// assert_eq!(decoder.result_len(), 1);
-    /// assert_eq!(decoder.read().unwrap(), value);
-    /// assert_eq!(decoder.read(), None);
-    /// assert_eq!(decoder.buffer_len(), 0);
-    /// assert_eq!(decoder.result_len(), 0);
-    /// ```
-    pub fn feed(&mut self, buf: &[u8]) -> Result<()> {
-        self.buf.extend(buf);
-        self.parse()
-    }
-
-    /// Reads a decoded value, will return `None` if no value decoded.
-    pub fn read(&mut self) -> Option<Value> {
-        if self.res.len() == 0 {
-            return None;
-        }
-        Some(self.res.remove(0))
-    }
-
-    /// Returns the buffer's length that wait for decoding. It usually is `0`. Non-zero means that
-    /// decoder need more buffer.
-    pub fn buffer_len(&self) -> usize {
-        self.buf.len()
-    }
-
-    /// Returns decoded values count. The decoded values will be hold by decoder, until you read
-    /// them.
-    pub fn result_len(&self) -> usize {
-        self.res.len()
-    }
-
-    fn prune_buf(&mut self) {
-        if self.pos == self.buf.len() {
-            self.pos = 0;
-            self.buf.clear();
-        }
-    }
-
-    fn parse(&mut self) -> Result<()> {
-        if self.buf.len() < self.exp {
-            return Ok(())
+    /// decode a value, will return `None` if no value decoded.
+    pub fn decode(&mut self) -> Result<Value> {
+        let mut res: Vec<u8> = Vec::new();
+        if let Err(err) = self.reader.read_until(b'\n', &mut res) {
+            return Err(Error::Io(err));
         }
 
-        match parse_one_value(&self.buf[self.pos..], 0, self.buf_bulk) {
-            ParseResult::Res(value, pos) => {
-                self.res.push(value);
-                self.pos += pos;
-                self.exp = EXPECT_BYTES;
-                self.prune_buf();
-                self.parse()
+        let len = res.len();
+        if len < 3 {
+            return Err(Error::Protocol(ErrorCode::InvalidString));
+        }
+        if res[len - 2] != b'\r' || res[len - 1] != b'\n' {
+            return Err(Error::Protocol(ErrorCode::InvalidString));
+        }
+
+        let bytes = res[1..len - 2].as_ref();
+        match res[0] {
+            // Value::String
+            b'+' => parse_string(bytes).and_then(|val| Ok(Value::String(val))),
+            // Value::Error
+            b'-' => parse_string(bytes).and_then(|val| Ok(Value::Error(val))),
+            // Value::Integer
+            b':' => parse_integer(bytes).and_then(|val| Ok(Value::Integer(val))),
+            // Value::Bulk
+            b'$' => {
+                match parse_integer(bytes) {
+                    Err(_) => Err(Error::Protocol(ErrorCode::InvalidBulk)),
+                    Ok(int) => {
+                        if int == -1 {
+                            // Null bulk
+                            return Ok(Value::Null);
+                        }
+                        if int < -1 || int >= RESP_MAX_SIZE {
+                            return Err(Error::Protocol(ErrorCode::InvalidBulk));
+                        }
+
+                        let mut buf: Vec<u8> = Vec::new();
+                        let int = int as usize;
+                        buf.resize(int + 2, 0);
+
+                        if let Err(err) = self.reader.read_exact(buf.as_mut_slice()) {
+                            return Err(Error::Io(err));
+                        }
+                        if buf[int] != b'\r' || buf[int + 1] != b'\n' {
+                            return Err(Error::Protocol(ErrorCode::InvalidString));
+                        }
+                        buf.truncate(int);
+                        if self.buf_bulk {
+                            return Ok(Value::BufBulk(buf));
+                        }
+                        parse_string(buf.as_slice()).and_then(|val| Ok(Value::Bulk(val)))
+                    }
+                }
             }
-            ParseResult::Exp(exp) => {
-                self.exp = exp;
-                Ok(())
+            // Value::Array
+            b'*' => {
+                match parse_integer(bytes) {
+                    Err(_) => Err(Error::Protocol(ErrorCode::InvalidArray)),
+                    Ok(int) => {
+                        if int == -1 {
+                            // Null array
+                            return Ok(Value::NullArray);
+                        }
+                        if int < -1 || int >= RESP_MAX_SIZE {
+                            return Err(Error::Protocol(ErrorCode::InvalidArray));
+                        }
+
+                        let mut array: Vec<Value> = Vec::with_capacity(int as usize);
+                        for _ in 0..int {
+                            match self.decode() {
+                                Ok(value) => {
+                                    array.push(value);
+                                }
+                                Err(err) => {
+                                    return Err(err);
+                                }
+                            }
+                        }
+                        Ok(Value::Array(array))
+                    }
+                }
             }
-            ParseResult::Err(code) => {
-                self.pos = self.buf.len();
-                self.exp = EXPECT_BYTES;
-                self.prune_buf();
-                Err(Error::Protocol(code))
-            }
+            prefix => Err(Error::Protocol(ErrorCode::InvalidPrefix(prefix))),
         }
     }
 }
 
+#[inline]
 fn parse_string(bytes: &[u8]) -> Result<String> {
     String::from_utf8(bytes.to_vec()).map_err(|err| Error::FromUtf8(err))
 }
 
+#[inline]
 fn parse_integer(bytes: &[u8]) -> Result<i64> {
     let str_integer = try!(parse_string(bytes));
     (str_integer.parse::<i64>()).map_err(|_| Error::Protocol(ErrorCode::InvalidInteger))
-}
-
-fn is_crlf(a: u8, b: u8) -> bool {
-    a == b'\r' && b == b'\n'
-}
-
-fn read_crlf(buffer: &[u8], start: usize) -> Option<usize> {
-    for cr_pos in start..(buffer.len() - 1) {
-        if is_crlf(buffer[cr_pos], buffer[cr_pos + 1]) {
-            return Some(cr_pos);
-        }
-    }
-    None
-}
-
-enum ParseResult {
-    // parse success
-    Res(Value, usize),
-    // expect more data to parse
-    Exp(usize),
-    // parse failed
-    Err(ErrorCode),
-}
-
-fn parse_one_value(buffer: &[u8], offset: usize, buf_bulk: bool) -> ParseResult {
-    let buf_len = buffer.len();
-    let prefix = buffer[offset];
-    let mut offset = offset + 1;
-
-    match prefix {
-        // Value::String
-        b'+' => {
-            if let Some(cr_pos) = read_crlf(buffer, offset) {
-                let bytes = buffer[offset..cr_pos].as_ref();
-                offset = cr_pos + 2;
-                match parse_string(bytes) {
-                    Ok(string) => ParseResult::Res(Value::String(string), offset),
-                    Err(_) => ParseResult::Err(ErrorCode::InvalidString),
-                }
-            } else {
-                ParseResult::Exp(buf_len + 1)
-            }
-        }
-        // Value::Error
-        b'-' => {
-            if let Some(cr_pos) = read_crlf(buffer, offset) {
-                let bytes = buffer[offset..cr_pos].as_ref();
-                offset = cr_pos + 2;
-                match parse_string(bytes) {
-                    Ok(string) => ParseResult::Res(Value::Error(string), offset),
-                    Err(_) => ParseResult::Err(ErrorCode::InvalidError),
-                }
-            } else {
-                ParseResult::Exp(buf_len + 1)
-            }
-        }
-        // Value::Integer
-        b':' => {
-            if let Some(cr_pos) = read_crlf(buffer, offset) {
-                let bytes = buffer[offset..cr_pos].as_ref();
-                offset = cr_pos + 2;
-                match parse_integer(bytes) {
-                    Ok(int) => ParseResult::Res(Value::Integer(int), offset),
-                    Err(_) => ParseResult::Err(ErrorCode::InvalidInteger),
-                }
-            } else {
-                ParseResult::Exp(buf_len + 1)
-            }
-        }
-        // Value::Bulk
-        b'$' => {
-            if let Some(cr_pos) = read_crlf(buffer, offset) {
-                let bytes = buffer[offset..cr_pos].as_ref();
-                offset = cr_pos + 2;
-                match parse_integer(bytes) {
-                    Ok(int) => {
-                        if int == -1 {
-                            // Null bulk
-                            return ParseResult::Res(Value::Null, offset);
-                        }
-                        if int < -1 || int >= RESP_MAX_SIZE {
-                            return ParseResult::Err(ErrorCode::InvalidBulk);
-                        }
-
-                        let int = int as usize;
-                        let cr_pos = int + offset;
-                        if cr_pos + 1 >= buf_len {
-                            return ParseResult::Exp(cr_pos + 2);
-                        }
-                        if !is_crlf(buffer[cr_pos], buffer[cr_pos + 1]) {
-                            return ParseResult::Err(ErrorCode::InvalidBulk);
-                        }
-
-                        let bytes = buffer[offset..cr_pos].as_ref();
-                        offset = cr_pos + 2;
-                        if buf_bulk {
-                            let mut buf: Vec<u8> = Vec::with_capacity(bytes.len());
-                            buf.extend(bytes);
-                            return ParseResult::Res(Value::BufBulk(buf), offset);
-                        }
-                        match parse_string(bytes) {
-                            Ok(string) => ParseResult::Res(Value::Bulk(string), offset),
-                            Err(_) => ParseResult::Err(ErrorCode::InvalidBulk),
-                        }
-                    }
-                    Err(_) => ParseResult::Err(ErrorCode::InvalidBulk),
-                }
-            } else {
-                ParseResult::Exp(buf_len + 1)
-            }
-        }
-        // Value::Array
-        b'*' => {
-            if let Some(cr_pos) = read_crlf(buffer, offset) {
-                let bytes = buffer[offset..cr_pos].as_ref();
-                offset = cr_pos + 2;
-                match parse_integer(bytes) {
-                    Ok(int) => {
-                        if int == -1 {
-                            // Null array
-                            return ParseResult::Res(Value::NullArray, offset);
-                        }
-                        if int < -1 || int >= RESP_MAX_SIZE {
-                            return ParseResult::Err(ErrorCode::InvalidArray);
-                        }
-
-                        let mut array: Vec<Value> = Vec::with_capacity(int as usize);
-                        for i in 0..int {
-                            let exp = offset + EXPECT_BYTES * ((int - i) as usize);
-                            if buf_len < exp {
-                                return ParseResult::Exp(exp);
-                            }
-
-                            match parse_one_value(buffer, offset, buf_bulk) {
-                                ParseResult::Res(value, pos) => {
-                                    array.push(value);
-                                    offset = pos;
-                                }
-                                ParseResult::Exp(exp) => {
-                                    return ParseResult::Exp(exp);
-                                }
-                                ParseResult::Err(code) => {
-                                    return ParseResult::Err(code);
-                                }
-                            }
-                        }
-                        ParseResult::Res(Value::Array(array), offset)
-                    }
-                    Err(_) => ParseResult::Err(ErrorCode::InvalidArray),
-                }
-            } else {
-                ParseResult::Exp(buf_len + 1)
-            }
-        }
-        prefix => ParseResult::Err(ErrorCode::InvalidPrefix(prefix)),
-    }
 }
 
 #[cfg(test)]
@@ -424,189 +252,183 @@ mod tests {
 
     #[test]
     fn struct_decoder() {
-        let mut decoder = Decoder::new();
-        assert_eq!(decoder.buffer_len(), 0);
-        assert_eq!(decoder.result_len(), 0);
-
         let buf = Value::Null.encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.buffer_len(), 0);
-        assert_eq!(decoder.result_len(), 1);
-        assert_eq!(decoder.read().unwrap(), Value::Null);
-        assert_eq!(decoder.result_len(), 0);
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::Null);
+        assert!(decoder.decode().is_err());
 
         let buf = Value::NullArray.encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::NullArray);
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::NullArray);
+        assert!(decoder.decode().is_err());
 
         let buf = Value::String("OK".to_string()).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::String("OK".to_string()));
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::String("OK".to_string()));
+        assert!(decoder.decode().is_err());
 
         let buf = Value::Error("message".to_string()).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Error("message".to_string()));
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(),
+                   Value::Error("message".to_string()));
+        assert!(decoder.decode().is_err());
 
         let buf = Value::Integer(123456789).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Integer(123456789));
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::Integer(123456789));
+        assert!(decoder.decode().is_err());
 
         let buf = Value::Bulk("Hello".to_string()).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Bulk("Hello".to_string()));
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::Bulk("Hello".to_string()));
+        assert!(decoder.decode().is_err());
 
         let buf = Value::BufBulk("Hello".to_string().into_bytes()).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Bulk("Hello".to_string()));
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::Bulk("Hello".to_string()));
+        assert!(decoder.decode().is_err());
 
         let array = vec!["SET", "a", "1"];
         let buf = encode_slice(&array);
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(),
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(),
                    Value::Array(vec![Value::Bulk("SET".to_string()),
                                      Value::Bulk("a".to_string()),
                                      Value::Bulk("1".to_string())]));
-        assert_eq!(decoder.read(), None);
+        assert!(decoder.decode().is_err());
     }
 
     #[test]
     fn struct_decoder_with_buf_bulk() {
-        let mut decoder = Decoder::with_buf_bulk();
-
         let buf = Value::Null.encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Null);
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::Null);
+        assert!(decoder.decode().is_err());
 
         let buf = Value::NullArray.encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::NullArray);
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::NullArray);
+        assert!(decoder.decode().is_err());
 
         let buf = Value::String("OK".to_string()).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::String("OK".to_string()));
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::String("OK".to_string()));
+        assert!(decoder.decode().is_err());
 
         let buf = Value::Error("message".to_string()).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Error("message".to_string()));
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(),
+                   Value::Error("message".to_string()));
+        assert!(decoder.decode().is_err());
 
         let buf = Value::Integer(123456789).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Integer(123456789));
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::Integer(123456789));
+        assert!(decoder.decode().is_err());
 
         let buf = Value::Bulk("Hello".to_string()).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(),
+        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(),
                    Value::BufBulk("Hello".to_string().into_bytes()));
-        assert_eq!(decoder.read(), None);
+        assert!(decoder.decode().is_err());
 
         let buf = Value::BufBulk("Hello".to_string().into_bytes()).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(),
+        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(),
                    Value::BufBulk("Hello".to_string().into_bytes()));
-        assert_eq!(decoder.read(), None);
+        assert!(decoder.decode().is_err());
 
         let array = vec!["SET", "a", "1"];
         let buf = encode_slice(&array);
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(),
+        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(),
                    Value::Array(vec![Value::BufBulk("SET".to_string().into_bytes()),
                                      Value::BufBulk("a".to_string().into_bytes()),
                                      Value::BufBulk("1".to_string().into_bytes())]));
-        assert_eq!(decoder.read(), None);
+        assert!(decoder.decode().is_err());
     }
 
     #[test]
-    fn struct_decoder_feed_error() {
-        let mut decoder = Decoder::new();
+    fn struct_decoder_with_invalid_data() {
+        let buf: &[u8] = &[];
+        let mut decoder = Decoder::new(BufReader::new(buf));
+        assert!(decoder.decode().is_err());
 
-        assert_eq!(decoder.feed(&[]).unwrap(), ());
-        assert_eq!(decoder.read(), None);
 
         let buf = Value::String("OK正".to_string()).encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::String("OK正".to_string()));
-        assert_eq!(decoder.read(), None);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(),
+                   Value::String("OK正".to_string()));
+        assert!(decoder.decode().is_err());
+
         let mut buf = Value::String("OK正".to_string()).encode();
         // [43, 79, 75, 230, 173, 163, 13, 10]
         buf.remove(5);
-        assert_eq!(decoder.feed(&buf).is_err(), true);
-        assert_eq!(decoder.buffer_len(), 0);
-        assert_eq!(decoder.result_len(), 0);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert!(decoder.decode().is_err());
+
 
         let buf = "$\r\n".to_string().into_bytes();
-        assert_eq!(decoder.feed(&buf).is_err(), true);
-
-        // feed a available data after error
-        let buf = Value::Null.encode();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Null);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert!(decoder.decode().is_err());
 
         let buf = "$-2\r\n".to_string().into_bytes();
-        assert_eq!(decoder.feed(&buf).is_err(), true);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert!(decoder.decode().is_err());
 
         let buf = "&-1\r\n".to_string().into_bytes();
-        assert_eq!(decoder.feed(&buf).is_err(), true);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert!(decoder.decode().is_err());
 
         let buf = "$-1\r\n".to_string().into_bytes();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Null);
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::Null);
+        assert!(decoder.decode().is_err());
 
         let buf = "$0\r\n\r\n".to_string().into_bytes();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Bulk("".to_string()));
-
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), Value::Bulk("".to_string()));
+        assert!(decoder.decode().is_err());
     }
 
-    #[test]
-    fn struct_decoder_continuingly() {
-        let mut decoder = Decoder::new();
+    // #[test]
+    // fn struct_decoder_continuingly() {
+    //     let mut decoder = Decoder::new();
 
-        let buf = "$0\r\n".to_string().into_bytes();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read(), None);
-        let buf = "\r\n".to_string().into_bytes();
-        assert_eq!(decoder.feed(&buf).unwrap(), ());
-        assert_eq!(decoder.read().unwrap(), Value::Bulk("".to_string()));
+    //     let buf = "$0\r\n".to_string().into_bytes();
+    //     assert_eq!(decoder.feed(&buf).unwrap(), ());
+    //     assert_eq!(decoder.decode(), None);
+    //     let buf = "\r\n".to_string().into_bytes();
+    //     assert_eq!(decoder.feed(&buf).unwrap(), ());
+    //     assert_eq!(decoder.decode().unwrap(), Value::Bulk("".to_string()));
 
-        let _values = vec![Value::Null,
-                           Value::NullArray,
-                           Value::String("abcdefg".to_string()),
-                           Value::Error("abcdefg".to_string()),
-                           Value::Integer(123456789),
-                           Value::Bulk("abcdefg".to_string())];
-        let mut values = _values.clone();
-        values.push(Value::Array(_values));
-        let buf: Vec<u8> = values.iter().flat_map(|value| value.encode()).collect();
-        let mut read_values: Vec<Value> = Vec::new();
+    //     let _values = vec![Value::Null,
+    //                        Value::NullArray,
+    //                        Value::String("abcdefg".to_string()),
+    //                        Value::Error("abcdefg".to_string()),
+    //                        Value::Integer(123456789),
+    //                        Value::Bulk("abcdefg".to_string())];
+    //     let mut values = _values.clone();
+    //     values.push(Value::Array(_values));
+    //     let buf: Vec<u8> = values.iter().flat_map(|value| value.encode()).collect();
+    //     let mut read_values: Vec<Value> = Vec::new();
 
-        // feed byte by byte~
-        for byte in buf {
-            let byte = vec![byte];
-            assert_eq!(decoder.feed(&byte).unwrap(), ());
-            if decoder.result_len() > 0 {
-                // one value should be parsed.
-                assert_eq!(decoder.result_len(), 1);
-                // buffer should be clear.
-                assert_eq!(decoder.buffer_len(), 0);
-                read_values.push(decoder.read().unwrap());
-                assert_eq!(decoder.result_len(), 0);
-            } else {
-                assert_eq!(decoder.buffer_len() > 0, true);
-                assert_eq!(decoder.result_len(), 0);
-            }
-        }
-        assert_eq!(&read_values, &values);
-    }
+    //     // feed byte by byte~
+    //     for byte in buf {
+    //         let byte = vec![byte];
+    //         assert_eq!(decoder.feed(&byte).unwrap(), ());
+    //         if decoder.result_len() > 0 {
+    //             // one value should be parsed.
+    //             assert_eq!(decoder.result_len(), 1);
+    //             // buffer should be clear.
+    //             assert_eq!(decoder.buffer_len(), 0);
+    //             read_values.push(decoder.decode().unwrap());
+    //             assert_eq!(decoder.result_len(), 0);
+    //         } else {
+    //             assert_eq!(decoder.buffer_len() > 0, true);
+    //             assert_eq!(decoder.result_len(), 0);
+    //         }
+    //     }
+    //     assert_eq!(&read_values, &values);
+    // }
 }
