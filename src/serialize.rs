@@ -2,8 +2,7 @@
 
 use std::vec::Vec;
 use std::string::String;
-use std::io::{Read, BufRead, BufReader};
-use super::error::{Result, Error, ErrorCode};
+use std::io::{Read, BufRead, BufReader, Result, Error, ErrorKind};
 
 use super::Value;
 
@@ -13,12 +12,12 @@ const CRLF_BYTES: &'static [u8] = b"\r\n";
 const NULL_BYTES: &'static [u8] = b"$-1\r\n";
 const NULL_ARRAY_BYTES: &'static [u8] = b"*-1\r\n";
 
-/// Encode the value to RESP binary buffer.
+/// Encodes RESP value to RESP binary buffer.
 /// # Examples
 /// ```
 /// # use self::resp::{Value, encode};
-/// let val = Value::String("OK正".to_string());
-/// assert_eq!(encode(&val), vec![43, 79, 75, 230, 173, 163, 13, 10]);
+/// let val = Value::String("OK".to_string());
+/// assert_eq!(encode(&val), vec![43, 79, 75, 13, 10]);
 /// ```
 pub fn encode(value: &Value) -> Vec<u8> {
     let mut res: Vec<u8> = Vec::new();
@@ -26,8 +25,8 @@ pub fn encode(value: &Value) -> Vec<u8> {
     res
 }
 
-/// Encode a array of slice string to RESP binary buffer.
-/// It is usefull for redis client to encode request command.
+/// Encodes a slice of string to RESP binary buffer.
+/// It is use to create a request command on redis client.
 /// # Examples
 /// ```
 /// # use self::resp::encode_slice;
@@ -42,6 +41,7 @@ pub fn encode_slice(slice: &[&str]) -> Vec<u8> {
     res
 }
 
+#[inline]
 fn buf_encode(value: &Value, buf: &mut Vec<u8>) {
     match *value {
         Value::Null => {
@@ -98,7 +98,7 @@ pub struct Decoder<R> {
 }
 
 impl<R: Read> Decoder<R> {
-    /// Creates a new Decoder instance for decoding the RESP buffers.
+    /// Creates a Decoder instance with given BufReader for decoding the RESP buffers.
     /// # Examples
     /// ```
     /// # use std::io::BufReader;
@@ -116,8 +116,8 @@ impl<R: Read> Decoder<R> {
         }
     }
 
-    /// Creates a new Decoder instance for decoding the RESP buffers. The instance will decode
-    /// bulk value to buffer bulk.
+    /// Creates a Decoder instance with given BufReader for decoding the RESP buffers.
+    /// The instance will decode bulk value to buffer bulk.
     /// # Examples
     /// ```
     /// # use std::io::BufReader;
@@ -136,19 +136,19 @@ impl<R: Read> Decoder<R> {
         }
     }
 
-    /// decode a value, will return `None` if no value decoded.
+    /// It will read buffers from the inner BufReader, decode it to a Value.
     pub fn decode(&mut self) -> Result<Value> {
         let mut res: Vec<u8> = Vec::new();
         if let Err(err) = self.reader.read_until(b'\n', &mut res) {
-            return Err(Error::Io(err));
+            return Err(err);
         }
 
         let len = res.len();
         if len < 3 {
-            return Err(Error::Protocol(ErrorCode::InvalidString));
+            return Err(Error::new(ErrorKind::InvalidInput, format!("too short: {}", len)));
         }
         if res[len - 2] != b'\r' || res[len - 1] != b'\n' {
-            return Err(Error::Protocol(ErrorCode::InvalidString));
+            return Err(Error::new(ErrorKind::InvalidInput, format!("invalid CRLF: {:?}", res)));
         }
 
         let bytes = res[1..len - 2].as_ref();
@@ -161,83 +161,94 @@ impl<R: Read> Decoder<R> {
             b':' => parse_integer(bytes).and_then(|val| Ok(Value::Integer(val))),
             // Value::Bulk
             b'$' => {
-                match parse_integer(bytes) {
-                    Err(_) => Err(Error::Protocol(ErrorCode::InvalidBulk)),
-                    Ok(int) => {
-                        if int == -1 {
-                            // Null bulk
-                            return Ok(Value::Null);
-                        }
-                        if int < -1 || int >= RESP_MAX_SIZE {
-                            return Err(Error::Protocol(ErrorCode::InvalidBulk));
-                        }
-
-                        let mut buf: Vec<u8> = Vec::new();
-                        let int = int as usize;
-                        buf.resize(int + 2, 0);
-
-                        if let Err(err) = self.reader.read_exact(buf.as_mut_slice()) {
-                            return Err(Error::Io(err));
-                        }
-                        if buf[int] != b'\r' || buf[int + 1] != b'\n' {
-                            return Err(Error::Protocol(ErrorCode::InvalidString));
-                        }
-                        buf.truncate(int);
-                        if self.buf_bulk {
-                            return Ok(Value::BufBulk(buf));
-                        }
-                        parse_string(buf.as_slice()).and_then(|val| Ok(Value::Bulk(val)))
+                if let Ok(int) = parse_integer(bytes) {
+                    if int == -1 {
+                        // Null bulk
+                        return Ok(Value::Null);
                     }
+                    if int < -1 || int >= RESP_MAX_SIZE {
+                        return Err(Error::new(ErrorKind::InvalidInput,
+                                              format!("invalid bulk length: {}", int)));
+                    }
+
+                    let mut buf: Vec<u8> = Vec::new();
+                    let int = int as usize;
+                    buf.resize(int + 2, 0);
+
+                    if let Err(err) = self.reader.read_exact(buf.as_mut_slice()) {
+                        return Err(err);
+                    }
+                    if buf[int] != b'\r' || buf[int + 1] != b'\n' {
+                        return Err(Error::new(ErrorKind::InvalidInput,
+                                              format!("invalid CRLF: {:?}", buf)));
+                    }
+                    buf.truncate(int);
+                    if self.buf_bulk {
+                        return Ok(Value::BufBulk(buf));
+                    }
+                    return parse_string(buf.as_slice()).and_then(|val| Ok(Value::Bulk(val)));
                 }
+
+                Err(Error::new(ErrorKind::InvalidInput,
+                               format!("invalid bulk: {:?}", bytes)))
             }
             // Value::Array
             b'*' => {
-                match parse_integer(bytes) {
-                    Err(_) => Err(Error::Protocol(ErrorCode::InvalidArray)),
-                    Ok(int) => {
-                        if int == -1 {
-                            // Null array
-                            return Ok(Value::NullArray);
-                        }
-                        if int < -1 || int >= RESP_MAX_SIZE {
-                            return Err(Error::Protocol(ErrorCode::InvalidArray));
-                        }
+                if let Ok(int) = parse_integer(bytes) {
+                    if int == -1 {
+                        // Null array
+                        return Ok(Value::NullArray);
+                    }
+                    if int < -1 || int >= RESP_MAX_SIZE {
+                        return Err(Error::new(ErrorKind::InvalidInput,
+                                              format!("invalid array length: {}", int)));
+                    }
 
-                        let mut array: Vec<Value> = Vec::with_capacity(int as usize);
-                        for _ in 0..int {
-                            match self.decode() {
-                                Ok(value) => {
-                                    array.push(value);
-                                }
-                                Err(err) => {
-                                    return Err(err);
-                                }
+                    let mut array: Vec<Value> = Vec::with_capacity(int as usize);
+                    for _ in 0..int {
+                        match self.decode() {
+                            Ok(value) => {
+                                array.push(value);
+                            }
+                            Err(err) => {
+                                return Err(err);
                             }
                         }
-                        Ok(Value::Array(array))
                     }
+                    return Ok(Value::Array(array));
                 }
+
+                Err(Error::new(ErrorKind::InvalidInput,
+                               format!("invalid array: {:?}", bytes)))
             }
-            prefix => Err(Error::Protocol(ErrorCode::InvalidPrefix(prefix))),
+            prefix => {
+                Err(Error::new(ErrorKind::InvalidInput,
+                               format!("invalid RESP type: {:?}", prefix)))
+            }
         }
     }
 }
 
 #[inline]
 fn parse_string(bytes: &[u8]) -> Result<String> {
-    String::from_utf8(bytes.to_vec()).map_err(|err| Error::FromUtf8(err))
+    String::from_utf8(bytes.to_vec()).map_err(|err| Error::new(ErrorKind::InvalidData, err))
 }
 
 #[inline]
 fn parse_integer(bytes: &[u8]) -> Result<i64> {
     let str_integer = try!(parse_string(bytes));
-    (str_integer.parse::<i64>()).map_err(|_| Error::Protocol(ErrorCode::InvalidInteger))
+    (str_integer.parse::<i64>()).map_err(|err| Error::new(ErrorKind::InvalidData, err))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use super::super::Value;
+
+    struct Case {
+        data: Vec<u8>,
+        want: Value,
+    }
 
     #[test]
     fn fn_encode_slice() {
@@ -252,99 +263,236 @@ mod tests {
 
     #[test]
     fn struct_decoder() {
-        let buf = Value::Null.encode();
-        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(), Value::Null);
-        assert!(decoder.decode().is_err());
+        let cases: &[Case] =
+            &[Case {
+                  data: "+\r\n".to_string().into_bytes(),
+                  want: Value::String("".to_string()),
+              },
+              Case {
+                  data: "+OK\r\n".to_string().into_bytes(),
+                  want: Value::String("OK".to_string()),
+              },
+              Case {
+                  data: "+中文\r\n".to_string().into_bytes(),
+                  want: Value::String("中文".to_string()),
+              },
+              Case {
+                  data: "-Error message\r\n".to_string().into_bytes(),
+                  want: Value::Error("Error message".to_string()),
+              },
+              Case {
+                  data: ":-1\r\n".to_string().into_bytes(),
+                  want: Value::Integer(-1),
+              },
+              Case {
+                  data: ":0\r\n".to_string().into_bytes(),
+                  want: Value::Integer(0),
+              },
+              Case {
+                  data: ":1456061893587000000\r\n".to_string().into_bytes(),
+                  want: Value::Integer(1456061893587000000),
+              },
+              Case {
+                  data: "$-1\r\n".to_string().into_bytes(),
+                  want: Value::Null,
+              },
+              Case {
+                  data: "$0\r\n\r\n".to_string().into_bytes(),
+                  want: Value::Bulk("".to_string()),
+              },
+              Case {
+                  data: "$6\r\nfoobar\r\n".to_string().into_bytes(),
+                  want: Value::Bulk("foobar".to_string()),
+              },
+              Case {
+                  data: "$6\r\n中文\r\n".to_string().into_bytes(),
+                  want: Value::Bulk("中文".to_string()),
+              },
+              Case {
+                  data: "$17\r\n你好！\n 换行\r\n".to_string().into_bytes(),
+                  want: Value::Bulk("你好！\n 换行".to_string()),
+              },
+              Case {
+                  data: "*-1\r\n".to_string().into_bytes(),
+                  want: Value::NullArray,
+              },
+              Case {
+                  data: "*0\r\n".to_string().into_bytes(),
+                  want: Value::Array(vec![]),
+              },
+              Case {
+                  data: "*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n".to_string().into_bytes(),
+                  want: Value::Array(vec![Value::Bulk("foo".to_string()),
+                                          Value::Bulk("bar".to_string())]),
+              },
+              Case {
+                  data: "*3\r\n:1\r\n:2\r\n:3\r\n".to_string().into_bytes(),
+                  want: Value::Array(vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)]),
+              },
+              Case {
+                  data: "*5\r\n:1\r\n:2\r\n:3\r\n:4\r\n$6\r\nfoobar\r\n".to_string().into_bytes(),
+                  want: Value::Array(vec![Value::Integer(1),
+                                          Value::Integer(2),
+                                          Value::Integer(3),
+                                          Value::Integer(4),
+                                          Value::Bulk("foobar".to_string())]),
+              },
+              Case {
+                  data: "*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n"
+                      .to_string()
+                      .into_bytes(),
+                  want: Value::Array(vec![Value::Array(vec![Value::Integer(1),
+                                                            Value::Integer(2),
+                                                            Value::Integer(3)]),
+                                          Value::Array(vec![Value::String("Foo".to_string()),
+                                                            Value::Error("Bar".to_string())])]),
+              },
+              Case {
+                  data: "*3\r\n$3\r\nfoo\r\n$-1\r\n$3\r\nbar\r\n".to_string().into_bytes(),
+                  want: Value::Array(vec![Value::Bulk("foo".to_string()),
+                                          Value::Null,
+                                          Value::Bulk("bar".to_string())]),
+              },
+              Case {
+                  data: encode_slice(&vec!["SET", "a", "1"]),
+                  want: Value::Array(vec![Value::Bulk("SET".to_string()),
+                                          Value::Bulk("a".to_string()),
+                                          Value::Bulk("1".to_string())]),
+              }];
 
-        let buf = Value::NullArray.encode();
-        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(), Value::NullArray);
-        assert!(decoder.decode().is_err());
+        // Single Decode
+        for case in cases {
+            let mut decoder = Decoder::new(BufReader::new(case.data.as_slice()));
+            assert_eq!(decoder.decode().unwrap(), case.want);
+            assert!(decoder.decode().is_err());
+        }
 
-        let buf = Value::String("OK".to_string()).encode();
-        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(), Value::String("OK".to_string()));
-        assert!(decoder.decode().is_err());
-
-        let buf = Value::Error("message".to_string()).encode();
-        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(),
-                   Value::Error("message".to_string()));
-        assert!(decoder.decode().is_err());
-
-        let buf = Value::Integer(123456789).encode();
-        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(), Value::Integer(123456789));
-        assert!(decoder.decode().is_err());
-
-        let buf = Value::Bulk("Hello".to_string()).encode();
-        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(), Value::Bulk("Hello".to_string()));
-        assert!(decoder.decode().is_err());
-
-        let buf = Value::BufBulk("Hello".to_string().into_bytes()).encode();
-        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(), Value::Bulk("Hello".to_string()));
-        assert!(decoder.decode().is_err());
-
-        let array = vec!["SET", "a", "1"];
-        let buf = encode_slice(&array);
-        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(),
-                   Value::Array(vec![Value::Bulk("SET".to_string()),
-                                     Value::Bulk("a".to_string()),
-                                     Value::Bulk("1".to_string())]));
+        // Multiple Decode
+        let mut all: Vec<u8> = Vec::new();
+        for case in cases {
+            all.extend_from_slice(case.data.as_slice());
+        }
+        let mut decoder = Decoder::new(BufReader::new(all.as_slice()));
+        for case in cases {
+            assert_eq!(decoder.decode().unwrap(), case.want);
+        }
         assert!(decoder.decode().is_err());
     }
 
     #[test]
     fn struct_decoder_with_buf_bulk() {
-        let buf = Value::Null.encode();
-        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(), Value::Null);
-        assert!(decoder.decode().is_err());
+        let cases: &[Case] =
+            &[Case {
+                  data: "+\r\n".to_string().into_bytes(),
+                  want: Value::String("".to_string()),
+              },
+              Case {
+                  data: "+OK\r\n".to_string().into_bytes(),
+                  want: Value::String("OK".to_string()),
+              },
+              Case {
+                  data: "+中文\r\n".to_string().into_bytes(),
+                  want: Value::String("中文".to_string()),
+              },
+              Case {
+                  data: "-Error message\r\n".to_string().into_bytes(),
+                  want: Value::Error("Error message".to_string()),
+              },
+              Case {
+                  data: ":-1\r\n".to_string().into_bytes(),
+                  want: Value::Integer(-1),
+              },
+              Case {
+                  data: ":0\r\n".to_string().into_bytes(),
+                  want: Value::Integer(0),
+              },
+              Case {
+                  data: ":1456061893587000000\r\n".to_string().into_bytes(),
+                  want: Value::Integer(1456061893587000000),
+              },
+              Case {
+                  data: "$-1\r\n".to_string().into_bytes(),
+                  want: Value::Null,
+              },
+              Case {
+                  data: "$0\r\n\r\n".to_string().into_bytes(),
+                  want: Value::BufBulk("".to_string().into_bytes()),
+              },
+              Case {
+                  data: "$6\r\nfoobar\r\n".to_string().into_bytes(),
+                  want: Value::BufBulk("foobar".to_string().into_bytes()),
+              },
+              Case {
+                  data: "$6\r\n中文\r\n".to_string().into_bytes(),
+                  want: Value::BufBulk("中文".to_string().into_bytes()),
+              },
+              Case {
+                  data: "$17\r\n你好！\n 换行\r\n".to_string().into_bytes(),
+                  want: Value::BufBulk("你好！\n 换行".to_string().into_bytes()),
+              },
+              Case {
+                  data: "*-1\r\n".to_string().into_bytes(),
+                  want: Value::NullArray,
+              },
+              Case {
+                  data: "*0\r\n".to_string().into_bytes(),
+                  want: Value::Array(vec![]),
+              },
+              Case {
+                  data: "*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n".to_string().into_bytes(),
+                  want: Value::Array(vec![Value::BufBulk("foo".to_string().into_bytes()),
+                                          Value::BufBulk("bar".to_string().into_bytes())]),
+              },
+              Case {
+                  data: "*3\r\n:1\r\n:2\r\n:3\r\n".to_string().into_bytes(),
+                  want: Value::Array(vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)]),
+              },
+              Case {
+                  data: "*5\r\n:1\r\n:2\r\n:3\r\n:4\r\n$6\r\nfoobar\r\n".to_string().into_bytes(),
+                  want: Value::Array(vec![Value::Integer(1),
+                                          Value::Integer(2),
+                                          Value::Integer(3),
+                                          Value::Integer(4),
+                                          Value::BufBulk("foobar".to_string().into_bytes())]),
+              },
+              Case {
+                  data: "*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n"
+                      .to_string()
+                      .into_bytes(),
+                  want: Value::Array(vec![Value::Array(vec![Value::Integer(1),
+                                                            Value::Integer(2),
+                                                            Value::Integer(3)]),
+                                          Value::Array(vec![Value::String("Foo".to_string()),
+                                                            Value::Error("Bar".to_string())])]),
+              },
+              Case {
+                  data: "*3\r\n$3\r\nfoo\r\n$-1\r\n$3\r\nbar\r\n".to_string().into_bytes(),
+                  want: Value::Array(vec![Value::BufBulk("foo".to_string().into_bytes()),
+                                          Value::Null,
+                                          Value::BufBulk("bar".to_string().into_bytes())]),
+              },
+              Case {
+                  data: encode_slice(&vec!["SET", "a", "1"]),
+                  want: Value::Array(vec![Value::BufBulk("SET".to_string().into_bytes()),
+                                          Value::BufBulk("a".to_string().into_bytes()),
+                                          Value::BufBulk("1".to_string().into_bytes())]),
+              }];
 
-        let buf = Value::NullArray.encode();
-        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(), Value::NullArray);
-        assert!(decoder.decode().is_err());
+        for case in cases {
+            let mut decoder = Decoder::with_buf_bulk(BufReader::new(case.data.as_slice()));
+            assert_eq!(decoder.decode().unwrap(), case.want);
+            assert!(decoder.decode().is_err());
+        }
 
-        let buf = Value::String("OK".to_string()).encode();
-        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(), Value::String("OK".to_string()));
-        assert!(decoder.decode().is_err());
-
-        let buf = Value::Error("message".to_string()).encode();
-        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(),
-                   Value::Error("message".to_string()));
-        assert!(decoder.decode().is_err());
-
-        let buf = Value::Integer(123456789).encode();
-        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(), Value::Integer(123456789));
-        assert!(decoder.decode().is_err());
-
-        let buf = Value::Bulk("Hello".to_string()).encode();
-        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(),
-                   Value::BufBulk("Hello".to_string().into_bytes()));
-        assert!(decoder.decode().is_err());
-
-        let buf = Value::BufBulk("Hello".to_string().into_bytes()).encode();
-        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(),
-                   Value::BufBulk("Hello".to_string().into_bytes()));
-        assert!(decoder.decode().is_err());
-
-        let array = vec!["SET", "a", "1"];
-        let buf = encode_slice(&array);
-        let mut decoder = Decoder::with_buf_bulk(BufReader::new(buf.as_slice()));
-        assert_eq!(decoder.decode().unwrap(),
-                   Value::Array(vec![Value::BufBulk("SET".to_string().into_bytes()),
-                                     Value::BufBulk("a".to_string().into_bytes()),
-                                     Value::BufBulk("1".to_string().into_bytes())]));
+        // Multiple Decode
+        let mut all: Vec<u8> = Vec::new();
+        for case in cases {
+            all.extend_from_slice(case.data.as_slice());
+        }
+        let mut decoder = Decoder::with_buf_bulk(BufReader::new(all.as_slice()));
+        for case in cases {
+            assert_eq!(decoder.decode().unwrap(), case.want);
+        }
         assert!(decoder.decode().is_err());
     }
 
@@ -390,45 +538,4 @@ mod tests {
         assert_eq!(decoder.decode().unwrap(), Value::Bulk("".to_string()));
         assert!(decoder.decode().is_err());
     }
-
-    // #[test]
-    // fn struct_decoder_continuingly() {
-    //     let mut decoder = Decoder::new();
-
-    //     let buf = "$0\r\n".to_string().into_bytes();
-    //     assert_eq!(decoder.feed(&buf).unwrap(), ());
-    //     assert_eq!(decoder.decode(), None);
-    //     let buf = "\r\n".to_string().into_bytes();
-    //     assert_eq!(decoder.feed(&buf).unwrap(), ());
-    //     assert_eq!(decoder.decode().unwrap(), Value::Bulk("".to_string()));
-
-    //     let _values = vec![Value::Null,
-    //                        Value::NullArray,
-    //                        Value::String("abcdefg".to_string()),
-    //                        Value::Error("abcdefg".to_string()),
-    //                        Value::Integer(123456789),
-    //                        Value::Bulk("abcdefg".to_string())];
-    //     let mut values = _values.clone();
-    //     values.push(Value::Array(_values));
-    //     let buf: Vec<u8> = values.iter().flat_map(|value| value.encode()).collect();
-    //     let mut read_values: Vec<Value> = Vec::new();
-
-    //     // feed byte by byte~
-    //     for byte in buf {
-    //         let byte = vec![byte];
-    //         assert_eq!(decoder.feed(&byte).unwrap(), ());
-    //         if decoder.result_len() > 0 {
-    //             // one value should be parsed.
-    //             assert_eq!(decoder.result_len(), 1);
-    //             // buffer should be clear.
-    //             assert_eq!(decoder.buffer_len(), 0);
-    //             read_values.push(decoder.decode().unwrap());
-    //             assert_eq!(decoder.result_len(), 0);
-    //         } else {
-    //             assert_eq!(decoder.buffer_len() > 0, true);
-    //             assert_eq!(decoder.result_len(), 0);
-    //         }
-    //     }
-    //     assert_eq!(&read_values, &values);
-    // }
 }

@@ -4,18 +4,22 @@ extern crate test;
 extern crate resp;
 
 use test::Bencher;
+use std::io::BufReader;
 use resp::{Value, Decoder};
 
 fn prepare_values() -> Value {
-    let a = vec![
-        Value::Null,
-        Value::NullArray,
-        Value::String("OKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOK".to_string()),
-        Value::Error("ErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErr".to_string()),
-        Value::Integer(1234567890),
-        Value::Bulk("Bulk String Bulk String Bulk String Bulk String Bulk String Bulk String".to_string()),
-        Value::Array(vec![Value::Null, Value::Integer(123), Value::Bulk("Bulk String Bulk String".to_string())])
-    ];
+    let a = vec![Value::Null,
+             Value::NullArray,
+             Value::String("OKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOKOK"
+                               .to_string()),
+             Value::Error("ErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErrErr"
+                              .to_string()),
+             Value::Integer(1234567890),
+             Value::Bulk("Bulk String Bulk String Bulk String Bulk String Bulk String Bulk String"
+                             .to_string()),
+             Value::Array(vec![Value::Null,
+                               Value::Integer(123),
+                               Value::Bulk("Bulk String Bulk String".to_string())])];
     let mut b = a.clone();
     b.push(Value::Array(a));
     b.push(Value::Null);
@@ -28,10 +32,8 @@ fn prepare_values() -> Value {
 }
 
 // Last result:
-// test decode_values ... bench:       5,984 ns/iter (+/- 1,495)
-// test encode_values ... bench:       3,567 ns/iter (+/- 478)
-// test decode_values ... bench:       5,216 ns/iter (+/- 2,213)
-// test encode_values ... bench:       3,080 ns/iter (+/- 56)
+// test decode_values ... bench:       6,298 ns/iter (+/- 5,783)
+// test encode_values ... bench:       2,568 ns/iter (+/- 1,879)
 
 #[bench]
 fn encode_values(b: &mut Bencher) {
@@ -42,10 +44,10 @@ fn encode_values(b: &mut Bencher) {
 #[bench]
 fn decode_values(b: &mut Bencher) {
     let value = prepare_values();
-    let buffers = value.encode();
+    let buf = value.encode();
     b.iter(|| {
-        let mut decoder = Decoder::new();
-        decoder.feed(&buffers).unwrap();
-        assert_eq!(decoder.read().unwrap(), value);
-    });
+               let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+               assert_eq!(decoder.decode().unwrap(), value);
+               assert!(decoder.decode().is_err());
+           });
 }

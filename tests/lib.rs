@@ -1,9 +1,44 @@
 //! RESP and serialization
 
 extern crate resp;
+extern crate rand;
 
-use std::io::BufReader;
+use std::io;
+use std::io::{Read, BufReader};
 use resp::{Value, encode, encode_slice, Decoder};
+use std::{thread, time};
+use rand::{StdRng, Rng};
+
+struct Case {
+    data: Vec<u8>,
+    want: Value,
+}
+
+struct FakeNetIO {
+    offset: usize,
+    buf: Vec<u8>,
+}
+
+impl Read for FakeNetIO {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.offset < self.buf.len() {
+            let mut rng = StdRng::new().unwrap();
+            let mut n: usize = rng.gen_range(0, std::cmp::min(buf.len(), 1024));
+            if n == 0 {
+                n = buf.len();
+            }
+            if self.offset + n > self.buf.len() {
+                n = self.buf.len() - self.offset;
+            }
+            thread::sleep(time::Duration::new(0, n as u32));
+            buf[..n].copy_from_slice(&self.buf[self.offset..self.offset + n]);
+            self.offset += n;
+            return Ok(n);
+        }
+        // Ok(0)
+        Err(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"))
+    }
+}
 
 #[test]
 fn enum_is_null() {
@@ -69,24 +104,134 @@ fn fn_encode_slice() {
 
 #[test]
 fn struct_decoder() {
-    let buf = Value::Null.encode();
-    let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-    assert_eq!(decoder.decode().unwrap(), Value::Null);
+    let cases: &[Case] =
+        &[Case {
+              data: "+\r\n".to_string().into_bytes(),
+              want: Value::String("".to_string()),
+          },
+          Case {
+              data: "+OK\r\n".to_string().into_bytes(),
+              want: Value::String("OK".to_string()),
+          },
+          Case {
+              data: "+中文\r\n".to_string().into_bytes(),
+              want: Value::String("中文".to_string()),
+          },
+          Case {
+              data: "-Error message\r\n".to_string().into_bytes(),
+              want: Value::Error("Error message".to_string()),
+          },
+          Case {
+              data: ":-1\r\n".to_string().into_bytes(),
+              want: Value::Integer(-1),
+          },
+          Case {
+              data: ":0\r\n".to_string().into_bytes(),
+              want: Value::Integer(0),
+          },
+          Case {
+              data: ":1456061893587000000\r\n".to_string().into_bytes(),
+              want: Value::Integer(1456061893587000000),
+          },
+          Case {
+              data: "$-1\r\n".to_string().into_bytes(),
+              want: Value::Null,
+          },
+          Case {
+              data: "$0\r\n\r\n".to_string().into_bytes(),
+              want: Value::Bulk("".to_string()),
+          },
+          Case {
+              data: "$6\r\nfoobar\r\n".to_string().into_bytes(),
+              want: Value::Bulk("foobar".to_string()),
+          },
+          Case {
+              data: "$6\r\n中文\r\n".to_string().into_bytes(),
+              want: Value::Bulk("中文".to_string()),
+          },
+          Case {
+              data: "$17\r\n你好！\n 换行\r\n".to_string().into_bytes(),
+              want: Value::Bulk("你好！\n 换行".to_string()),
+          },
+          Case {
+              data: "*-1\r\n".to_string().into_bytes(),
+              want: Value::NullArray,
+          },
+          Case {
+              data: "*0\r\n".to_string().into_bytes(),
+              want: Value::Array(vec![]),
+          },
+          Case {
+              data: "*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n".to_string().into_bytes(),
+              want: Value::Array(vec![Value::Bulk("foo".to_string()),
+                                      Value::Bulk("bar".to_string())]),
+          },
+          Case {
+              data: "*3\r\n:1\r\n:2\r\n:3\r\n".to_string().into_bytes(),
+              want: Value::Array(vec![Value::Integer(1), Value::Integer(2), Value::Integer(3)]),
+          },
+          Case {
+              data: "*5\r\n:1\r\n:2\r\n:3\r\n:4\r\n$6\r\nfoobar\r\n".to_string().into_bytes(),
+              want: Value::Array(vec![Value::Integer(1),
+                                      Value::Integer(2),
+                                      Value::Integer(3),
+                                      Value::Integer(4),
+                                      Value::Bulk("foobar".to_string())]),
+          },
+          Case {
+              data: "*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n".to_string().into_bytes(),
+              want: Value::Array(vec![Value::Array(vec![Value::Integer(1),
+                                                        Value::Integer(2),
+                                                        Value::Integer(3)]),
+                                      Value::Array(vec![Value::String("Foo".to_string()),
+                                                        Value::Error("Bar".to_string())])]),
+          },
+          Case {
+              data: "*3\r\n$3\r\nfoo\r\n$-1\r\n$3\r\nbar\r\n".to_string().into_bytes(),
+              want: Value::Array(vec![Value::Bulk("foo".to_string()),
+                                      Value::Null,
+                                      Value::Bulk("bar".to_string())]),
+          },
+          Case {
+              data: encode_slice(&vec!["SET", "a", "1"]),
+              want: Value::Array(vec![Value::Bulk("SET".to_string()),
+                                      Value::Bulk("a".to_string()),
+                                      Value::Bulk("1".to_string())]),
+          }];
 
-    let buf = Value::NullArray.encode();
-    let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-    assert_eq!(decoder.decode().unwrap(), Value::NullArray);
+    // Single Decode
+    for case in cases {
+        let mut decoder = Decoder::new(BufReader::new(case.data.as_slice()));
+        assert_eq!(decoder.decode().unwrap(), case.want);
+        assert!(decoder.decode().is_err());
+    }
 
-    let buf = Value::String("OK".to_string()).encode();
-    let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-    assert_eq!(decoder.decode().unwrap(), Value::String("OK".to_string()));
+    // Multiple Decode
+    let mut all: Vec<u8> = Vec::new();
+    for case in cases {
+        all.extend_from_slice(case.data.as_slice());
+    }
+    let mut decoder = Decoder::new(BufReader::new(all.as_slice()));
+    for case in cases {
+        assert_eq!(decoder.decode().unwrap(), case.want);
+    }
+    assert!(decoder.decode().is_err());
 
-    let buf = Value::Error("message".to_string()).encode();
-    let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-    assert_eq!(decoder.decode().unwrap(),
-               Value::Error("message".to_string()));
-
-    let buf = Value::Integer(123456789).encode();
-    let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
-    assert_eq!(decoder.decode().unwrap(), Value::Integer(123456789));
+    // Chaos Decode
+    let repeats: usize = 100000;
+    let mut chaos: Vec<u8> = Vec::new();
+    for _ in 0..repeats {
+        chaos.extend_from_slice(all.as_slice());
+    }
+    println!("8888888 {:?}", chaos.len());
+    let mut decoder = Decoder::new(BufReader::new(FakeNetIO {
+                                                      offset: 0,
+                                                      buf: chaos,
+                                                  }));
+    for _ in 0..repeats {
+        for case in cases {
+            assert_eq!(decoder.decode().unwrap(), case.want);
+        }
+    }
+    assert!(decoder.decode().is_err());
 }

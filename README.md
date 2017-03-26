@@ -53,12 +53,9 @@ enum Value {
 #### `fn encode_slice(array: &[&str]) -> Vec<u8>`
 
 ### Decoder
-#### `Decoder.new() -> Self`
-#### `Decoder.with_buf_bulk() -> Self`
-#### `decoder.feed(buf: &[u8]) -> Result<(), io:Error>`
-#### `decoder.read() -> Option<Value>`
-#### `decoder.buffer_len() -> usize`
-#### `decoder.result_len() -> usize`
+#### `Decoder.new(reader: BufReader<R>) -> Self`
+#### `Decoder.with_buf_bulk(reader: BufReader<R>) -> Self`
+#### `decoder.decode() -> Result<Value>`
 
 
 [version-image]: https://img.shields.io/crates/v/resp.svg
