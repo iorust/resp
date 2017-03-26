@@ -1,5 +1,5 @@
-RESP
-====
+# RESP
+
 RESP(REdis Serialization Protocol) Serialization for Rust.
 
 [![Crates version][version-image]][version-url]
@@ -12,7 +12,6 @@ Implementations:
 - [redis-cli](https://github.com/iorust/redis-cli) redis CLI.
 
 ## API
-### Documentation https://iorust.github.io/resp/resp
 
 ```Rust
 extern crate resp;
@@ -43,18 +42,27 @@ enum Value {
 ```
 
 #### `value.is_null() -> bool`
+
 #### `value.is_error() -> bool`
+
 #### `value.encode() -> Vec<u8>`
+
 #### `value.to_encoded_string() -> io::Result<String>`
+
 #### `value.to_beautify_string() -> String`
 
 ### encode
+
 #### `fn encode(value: &Value) -> Vec<u8>`
+
 #### `fn encode_slice(array: &[&str]) -> Vec<u8>`
 
 ### Decoder
+
 #### `Decoder.new(reader: BufReader<R>) -> Self`
+
 #### `Decoder.with_buf_bulk(reader: BufReader<R>) -> Self`
+
 #### `decoder.decode() -> Result<Value>`
 
 
