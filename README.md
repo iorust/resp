@@ -6,6 +6,7 @@ RESP(REdis Serialization Protocol) Serialization for Rust.
 [![Build Status][travis-image]][travis-url]
 [![Coverage Status][coveralls-image]][coveralls-url]
 [![Crates downloads][downloads-image]][downloads-url]
+[![Docs Status][docs-image]][docs-url]
 
 Implementations:
 
@@ -77,3 +78,6 @@ enum Value {
 
 [downloads-image]: https://img.shields.io/crates/d/resp.svg
 [downloads-url]: https://crates.io/crates/resp
+
+[docs-image]: https://docs.rs/resp/badge.svg
+[docs-url]: https://docs.rs/resp
