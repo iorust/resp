@@ -139,15 +139,13 @@ impl<R: Read> Decoder<R> {
     /// It will read buffers from the inner BufReader, decode it to a Value.
     pub fn decode(&mut self) -> Result<Value> {
         let mut res: Vec<u8> = Vec::new();
-        if let Err(err) = self.reader.read_until(b'\n', &mut res) {
-            return Err(err);
-        }
+        self.reader.read_until(b'\n', &mut res)?;
 
         let len = res.len();
         if len < 3 {
             return Err(Error::new(ErrorKind::InvalidInput, format!("too short: {}", len)));
         }
-        if res[len - 2] != b'\r' || res[len - 1] != b'\n' {
+        if !is_crlf(res[len - 2], res[len - 1]) {
             return Err(Error::new(ErrorKind::InvalidInput, format!("invalid CRLF: {:?}", res)));
         }
 
@@ -161,65 +159,48 @@ impl<R: Read> Decoder<R> {
             b':' => parse_integer(bytes).map(|val| Value::Integer(val)),
             // Value::Bulk
             b'$' => {
-                if let Ok(int) = parse_integer(bytes) {
-                    if int == -1 {
-                        // Null bulk
-                        return Ok(Value::Null);
-                    }
-                    if int < -1 || int >= RESP_MAX_SIZE {
-                        return Err(Error::new(ErrorKind::InvalidInput,
-                                              format!("invalid bulk length: {}", int)));
-                    }
-
-                    let mut buf: Vec<u8> = Vec::new();
-                    let int = int as usize;
-                    buf.resize(int + 2, 0);
-
-                    if let Err(err) = self.reader.read_exact(buf.as_mut_slice()) {
-                        return Err(err);
-                    }
-                    if buf[int] != b'\r' || buf[int + 1] != b'\n' {
-                        return Err(Error::new(ErrorKind::InvalidInput,
-                                              format!("invalid CRLF: {:?}", buf)));
-                    }
-                    buf.truncate(int);
-                    if self.buf_bulk {
-                        return Ok(Value::BufBulk(buf));
-                    }
-                    return parse_string(buf.as_slice()).map(|val| Value::Bulk(val));
+                let int = parse_integer(bytes)?;
+                if int == -1 {
+                    // Null bulk
+                    return Ok(Value::Null);
+                }
+                if int < -1 || int >= RESP_MAX_SIZE {
+                    return Err(Error::new(ErrorKind::InvalidInput,
+                                          format!("invalid bulk length: {}", int)));
                 }
 
-                Err(Error::new(ErrorKind::InvalidInput,
-                               format!("invalid bulk: {:?}", bytes)))
+                let mut buf: Vec<u8> = Vec::new();
+                let int = int as usize;
+                buf.resize(int + 2, 0);
+                self.reader.read_exact(buf.as_mut_slice())?;
+                if !is_crlf(buf[int], buf[int + 1]) {
+                    return Err(Error::new(ErrorKind::InvalidInput,
+                                          format!("invalid CRLF: {:?}", buf)));
+                }
+                buf.truncate(int);
+                if self.buf_bulk {
+                    return Ok(Value::BufBulk(buf));
+                }
+                return parse_string(buf.as_slice()).map(|val| Value::Bulk(val));
             }
             // Value::Array
             b'*' => {
-                if let Ok(int) = parse_integer(bytes) {
-                    if int == -1 {
-                        // Null array
-                        return Ok(Value::NullArray);
-                    }
-                    if int < -1 || int >= RESP_MAX_SIZE {
-                        return Err(Error::new(ErrorKind::InvalidInput,
-                                              format!("invalid array length: {}", int)));
-                    }
-
-                    let mut array: Vec<Value> = Vec::with_capacity(int as usize);
-                    for _ in 0..int {
-                        match self.decode() {
-                            Ok(value) => {
-                                array.push(value);
-                            }
-                            Err(err) => {
-                                return Err(err);
-                            }
-                        }
-                    }
-                    return Ok(Value::Array(array));
+                let int = parse_integer(bytes)?;
+                if int == -1 {
+                    // Null array
+                    return Ok(Value::NullArray);
+                }
+                if int < -1 || int >= RESP_MAX_SIZE {
+                    return Err(Error::new(ErrorKind::InvalidInput,
+                                          format!("invalid array length: {}", int)));
                 }
 
-                Err(Error::new(ErrorKind::InvalidInput,
-                               format!("invalid array: {:?}", bytes)))
+                let mut array: Vec<Value> = Vec::with_capacity(int as usize);
+                for _ in 0..int {
+                    let val = self.decode()?;
+                    array.push(val);
+                }
+                return Ok(Value::Array(array));
             }
             prefix => {
                 Err(Error::new(ErrorKind::InvalidInput,
@@ -230,13 +211,18 @@ impl<R: Read> Decoder<R> {
 }
 
 #[inline]
+fn is_crlf(a: u8, b: u8) -> bool {
+    a == b'\r' && b == b'\n'
+}
+
+#[inline]
 fn parse_string(bytes: &[u8]) -> Result<String> {
     String::from_utf8(bytes.to_vec()).map_err(|err| Error::new(ErrorKind::InvalidData, err))
 }
 
 #[inline]
 fn parse_integer(bytes: &[u8]) -> Result<i64> {
-    let str_integer = try!(parse_string(bytes));
+    let str_integer = parse_string(bytes)?;
     (str_integer.parse::<i64>()).map_err(|err| Error::new(ErrorKind::InvalidData, err))
 }
 
@@ -536,6 +522,18 @@ mod tests {
         let buf = "$0\r\n\r\n".to_string().into_bytes();
         let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
         assert_eq!(decoder.decode().unwrap(), Value::Bulk("".to_string()));
+        assert!(decoder.decode().is_err());
+
+        let buf = "*3\r\n".to_string().into_bytes();
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert!(decoder.decode().is_err());
+
+        let buf = "*3\r\n$3\r\nfoo\r\n$-1\r\n".to_string().into_bytes();
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
+        assert!(decoder.decode().is_err());
+
+        let buf = "*3\r\n$3\r\nfoo\r\n$-1\r\n$3\r\nba".to_string().into_bytes();
+        let mut decoder = Decoder::new(BufReader::new(buf.as_slice()));
         assert!(decoder.decode().is_err());
     }
 }
