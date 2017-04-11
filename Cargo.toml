@@ -1,9 +1,9 @@
 [package]
 name = "resp"
-version = "1.0.1"
+version = "1.0.2"
 authors = ["Qing Yan <admin@zensh.com>"]
 description = "RESP(REdis Serialization Protocol) Serialization for Rust."
-documentation = "https://iorust.github.io/resp/resp"
+documentation = "https://docs.rs/resp"
 homepage = "https://github.com/iorust/resp"
 repository = "https://github.com/iorust/resp.git"
 readme = "README.md"

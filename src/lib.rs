@@ -5,7 +5,7 @@
        html_playground_url = "https://play.rust-lang.org",
        issue_tracker_base_url = "https://github.com/iorust/resp/issues")]
 
-//! RESP(REdis Serialization Protocol) Serialization for Rust.
+//! RESP(Redis Serialization Protocol) Serialization for Rust.
 
 pub use self::value::Value;
 pub use self::serialize::{encode, encode_slice, Decoder};
