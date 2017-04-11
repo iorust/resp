@@ -152,11 +152,11 @@ impl<R: Read> Decoder<R> {
         let bytes = res[1..len - 2].as_ref();
         match res[0] {
             // Value::String
-            b'+' => parse_string(bytes).map(|val| Value::String(val)),
+            b'+' => parse_string(bytes).map(Value::String),
             // Value::Error
-            b'-' => parse_string(bytes).map(|val| Value::Error(val)),
+            b'-' => parse_string(bytes).map(Value::Error),
             // Value::Integer
-            b':' => parse_integer(bytes).map(|val| Value::Integer(val)),
+            b':' => parse_integer(bytes).map(Value::Integer),
             // Value::Bulk
             b'$' => {
                 let int = parse_integer(bytes)?;
@@ -181,7 +181,7 @@ impl<R: Read> Decoder<R> {
                 if self.buf_bulk {
                     return Ok(Value::BufBulk(buf));
                 }
-                return parse_string(buf.as_slice()).map(|val| Value::Bulk(val));
+                parse_string(buf.as_slice()).map(Value::Bulk)
             }
             // Value::Array
             b'*' => {
@@ -200,7 +200,7 @@ impl<R: Read> Decoder<R> {
                     let val = self.decode()?;
                     array.push(val);
                 }
-                return Ok(Value::Array(array));
+                Ok(Value::Array(array))
             }
             prefix => {
                 Err(Error::new(ErrorKind::InvalidInput,
