@@ -193,7 +193,7 @@ fn struct_decoder() {
                                       Value::Bulk("bar".to_string())]),
           },
           Case {
-              data: encode_slice(&vec!["SET", "a", "1"]),
+              data: encode_slice(&["SET", "a", "1"]),
               want: Value::Array(vec![Value::Bulk("SET".to_string()),
                                       Value::Bulk("a".to_string()),
                                       Value::Bulk("1".to_string())]),

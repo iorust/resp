@@ -38,8 +38,7 @@ impl Value {
     /// ```
     pub fn is_null(&self) -> bool {
         match *self {
-            Value::Null => true,
-            Value::NullArray => true,
+            Value::Null | Value::NullArray => true,
             _ => false,
         }
     }
@@ -149,15 +148,15 @@ impl Value {
     /// ```
     pub fn to_string_pretty(&self) -> String {
         match *self {
-            Value::Null => format!("{}", "(Null)"),
-            Value::NullArray => format!("{}", "(Null Array)"),
-            Value::String(ref val) => format!("{}", val),
+            Value::Null => "(Null)".to_string(),
+            Value::NullArray => "(Null Array)".to_string(),
+            Value::String(ref val) => val.to_string(),
             Value::Error(ref val) => format!("(Error) {}", val),
             Value::Integer(ref val) => format!("(Integer) {}", val.to_string()),
             Value::Bulk(ref val) => format!("\"{}\"", val),
             Value::BufBulk(ref val) => {
-                if val.len() == 0 {
-                    return format!("{}", "(Empty Buffer)");
+                if val.is_empty() {
+                    return "(Empty Buffer)".to_string();
                 }
                 let mut string = String::new();
                 for u in val.iter().take(16) {
@@ -168,7 +167,7 @@ impl Value {
                 }
                 format!("(Buffer) {}", &string[1..])
             }
-            Value::Array(ref val) => format!("{}", format_array_to_str(val, 0)),
+            Value::Array(ref val) => format_array_to_str(val, 0),
         }
     }
     /// [DEPRECATED] Alias of to_string_pretty.
@@ -206,9 +205,9 @@ fn format_index_str(index: usize, num_len: usize) -> String {
     format!("{}) ", string)
 }
 
-fn format_array_to_str(array: &Vec<Value>, min_index_len: usize) -> String {
-    if array.len() == 0 {
-        return format!("{}", "(Empty Array)");
+fn format_array_to_str(array: &[Value], min_index_len: usize) -> String {
+    if array.is_empty() {
+        return "(Empty Array)".to_string();
     }
 
     let mut string = String::new();
@@ -226,8 +225,8 @@ fn format_array_to_str(array: &Vec<Value>, min_index_len: usize) -> String {
             index_len
         };
         string.push_str(&format_index_str(i + 1, num_len));
-        match value {
-            &Value::Array(ref sub) => string.push_str(&format_array_to_str(sub, index_len + 3)),
+        match *value {
+            Value::Array(ref sub) => string.push_str(&format_array_to_str(sub, index_len + 3)),
             _ => string.push_str(&value.to_string_pretty()),
         };
         if i + 1 < len {
