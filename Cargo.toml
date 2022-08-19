@@ -1,6 +1,6 @@
 [package]
 name = "resp"
-version = "1.0.2"
+version = "1.0.3"
 authors = ["Qing Yan <admin@zensh.com>"]
 description = "RESP(REdis Serialization Protocol) Serialization for Rust."
 documentation = "https://docs.rs/resp"
@@ -11,4 +11,4 @@ keywords = ["redis", "resp", "serialization"]
 license = "MIT/Apache-2.0"
 
 [dev-dependencies]
-rand = "0.3"
+rand = "0.8"

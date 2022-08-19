@@ -7,7 +7,7 @@ use std::io;
 use std::io::{Read, BufReader};
 use resp::{Value, encode, encode_slice, Decoder};
 use std::{thread, time};
-use rand::{StdRng, Rng};
+use rand::{thread_rng, Rng};
 
 struct Case {
     data: Vec<u8>,
@@ -22,11 +22,8 @@ struct FakeNetIO {
 impl Read for FakeNetIO {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.offset < self.buf.len() {
-            let mut rng = StdRng::new().unwrap();
-            let mut n: usize = rng.gen_range(0, std::cmp::min(buf.len(), 1024));
-            if n == 0 {
-                n = buf.len();
-            }
+            let mut rng = thread_rng();
+            let mut n: usize = rng.gen_range(1..=std::cmp::min(buf.len(), 1024));
             if self.offset + n > self.buf.len() {
                 n = self.buf.len() - self.offset;
             }

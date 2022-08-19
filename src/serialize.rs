@@ -142,6 +142,9 @@ impl<R: Read> Decoder<R> {
         self.reader.read_until(b'\n', &mut res)?;
 
         let len = res.len();
+        if len == 0 {
+            return Err(Error::new(ErrorKind::UnexpectedEof, "unexpected EOF"));
+        }
         if len < 3 {
             return Err(Error::new(ErrorKind::InvalidInput, format!("too short: {}", len)));
         }
@@ -486,7 +489,15 @@ mod tests {
     fn struct_decoder_with_invalid_data() {
         let buf: &[u8] = &[];
         let mut decoder = Decoder::new(BufReader::new(buf));
-        assert!(decoder.decode().is_err());
+        let rt = decoder.decode();
+        assert!(rt.is_err());
+        assert_eq!(rt.unwrap_err().kind(), ErrorKind::UnexpectedEof);
+
+        let buf: &[u8] = &[1, 2];
+        let mut decoder = Decoder::new(BufReader::new(buf));
+        let rt = decoder.decode();
+        assert!(rt.is_err());
+        assert_eq!(rt.unwrap_err().kind(), ErrorKind::InvalidInput);
 
 
         let buf = Value::String("OK正".to_string()).encode();
